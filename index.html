@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Power Up</title>
+		<link rel="stylesheet" href="./src/style.css" />
+	</head>
+	<body>
+		<main>
+			<header><h1>Power Up</h1><p>One platform. Room to move.</p></header>
+			<div id="game" role="img" aria-label="Platformer: cyan player on an amber platform. Use keyboard or gamepad to move and jump."></div>
+			<footer>
+				<p><strong>Move</strong> A / D or ← / → <span>·</span> <strong>Jump</strong> Space</p>
+				<p>Gamepad: left stick or D-pad <span>·</span> primary face button to jump</p>
+				<p class="hint">Fall off? You’ll return to the platform.</p>
+			</footer>
+			<p id="error" role="alert" hidden></p>
+		</main>
+		<script type="module" src="./src/main.ts"></script>
+	</body>
+</html>
