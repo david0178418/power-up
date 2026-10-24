@@ -21,6 +21,20 @@ export interface CombatContact {
 	targetId: number;
 }
 
+interface CombatLookup {
+	getComponent(id: number, name: 'combatVolume'): CombatVolume | undefined;
+	getEntity(id: number): unknown;
+}
+
+// Shared identity/activation boundary for endpoint and swept contacts.
+export const getCombatContact = function (world: CombatLookup, attackId: number, hurtboxId: number): CombatContact | undefined {
+	const attack = world.getComponent(attackId, 'combatVolume');
+	const target = world.getComponent(hurtboxId, 'combatVolume');
+	if (attack?.kind !== 'attack' || target?.kind !== 'hurtbox' || !attack.active || !target.active) return undefined;
+	if (!world.getEntity(attack.ownerId) || !world.getEntity(target.ownerId)) return undefined;
+	return { attackId, ownerId: attack.ownerId, hurtboxId, targetId: target.ownerId };
+};
+
 // Separate entities carry these colliders; they never carry rigidBody.
 export const createCombatVolume = function (
 	ownerId: number, kind: CombatVolume['kind'], width: number, height: number,
@@ -52,11 +66,8 @@ export const combat = definePlugin('combat')
 			collision({ data, ecs }) {
 				const attackId = data.layerA === 'attack' ? data.entityA : data.entityB;
 				const hurtboxId = data.layerA === 'hurtbox' ? data.entityA : data.entityB;
-				const attack = ecs.getComponent(attackId, 'combatVolume');
-				const target = ecs.getComponent(hurtboxId, 'combatVolume');
-				if (attack?.kind !== 'attack' || target?.kind !== 'hurtbox' || !attack.active || !target.active) return;
-				if (!ecs.getEntity(attack.ownerId) || !ecs.getEntity(target.ownerId)) return;
-				ecs.eventBus.publish('combatContact', { attackId, ownerId: attack.ownerId, hurtboxId, targetId: target.ownerId });
+				const contact = getCombatContact(ecs, attackId, hurtboxId);
+				if (contact) ecs.eventBus.publish('combatContact', contact);
 			},
 		});
 	});

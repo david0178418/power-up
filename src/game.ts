@@ -5,6 +5,7 @@ import { createAABBCollider, createCollisionPlugin } from 'ecspresso/plugins/phy
 import { createTransform, createTransformPlugin, transformSystems } from 'ecspresso/plugins/spatial/transform';
 
 import { combat, createCombatVolume, layers } from './combat';
+import { projectiles } from './projectile';
 
 // Simulation bounds are independent of the renderer's logical viewport.
 export const LEVEL_BOUNDS = { left: 0, top: 0, right: 960, bottom: 540 } as const;
@@ -31,6 +32,7 @@ const createBaseBuilder = function (input: Pick<InputPluginOptions<Action>, 'tar
 		}))
 		.withPlugin(createCollisionPlugin({ layers, phase: 'fixedUpdate', after: [transformSystems.propagate] }))
 		.withPlugin(combat)
+		.withPlugin(projectiles)
 		.withPlugin(createInputPlugin<Action>({
 			...input,
 			// Sample edges once per simulation tick: no lost edges on zero-step frames,

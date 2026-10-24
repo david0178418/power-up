@@ -8,7 +8,7 @@
 	</head>
 	<body>
 		<main>
-			<header><h1>Power Up</h1><p>Combat overlap test.</p></header>
+			<header><h1>Power Up</h1><p>Combat and projectile tests.</p></header>
 			<div id="game" role="img" aria-label="Platformer: cyan player on an amber platform. Rose enemies are stationary test targets. Move, jump, and hold J to test attack contact."></div>
 			<footer>
 				<p><strong>Move</strong> A / D or ← / → <span>·</span> <strong>Jump</strong> Space <span>·</span> <strong>Attack</strong> Hold J</p>
@@ -18,6 +18,19 @@
 					<label><input id="combat-outlines" type="checkbox" checked /> Show combat outlines</label>
 					<p id="combat-status" role="status"></p>
 					<p class="hint">Rose enemies are stationary targets. Gold means contact. No damage or body blocking.</p>
+				</section>
+				<section id="projectile-review" aria-label="Fast projectile fixture">
+					<p>Projectile review · two thin rose targets, then an amber solid, above the player.</p>
+					<div class="projectile-controls">
+						<label>Speed (units/s) <input id="projectile-speed" type="number" min="1" max="60000" step="1" value="24000" required /></label>
+						<label>Lifetime (seconds) <input id="projectile-lifetime" type="number" min="0.01" max="10" step="0.01" value="0.35" required /></label>
+						<label><input id="projectile-miss" type="checkbox" /> Near miss</label>
+						<button id="projectile-launch" type="button">Launch projectile</button>
+						<button id="projectile-clear" type="button">Clear projectile</button>
+					</div>
+					<p id="projectile-status" role="status"></p>
+					<p id="projectile-history">Last run: launch to inspect ordered contacts.</p>
+					<p class="hint">Pass-through detection fixture; no damage or impact response. Off-screen shots expire by lifetime. Pan right to follow.</p>
 				</section>
 				<section id="camera-review" aria-label="Temporary camera review controls">
 					<p>Camera review · Pan the view to find the violet marker at world 1120, 270.</p>
