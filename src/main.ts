@@ -1,18 +1,24 @@
 import { Graphics } from 'pixi.js';
 import { createRenderer2DPlugin } from 'ecspresso/plugins/rendering/renderer2D';
-import { createGameBuilder, spawnLevel, WORLD, PLATFORM, PLAYER } from './game';
+import { createGameBuilder, spawnLevel, PLATFORM, PLAYER } from './game';
+import { createViewCamera, VIEWPORT } from './view';
+import { attachCameraReview } from './camera-review';
 
 const start = async function (container: HTMLElement) {
 	const world = createGameBuilder()
+		.withPlugin(createViewCamera())
 		.withPlugin(createRenderer2DPlugin({
 			container,
 			background: '#101c2c',
-			screenScale: { ...WORLD, mode: 'fit' },
+			camera: true,
+			screenScale: { ...VIEWPORT, mode: 'fit' },
 			pixiInit: { antialias: true, autoDensity: true, resolution: Math.min(window.devicePixelRatio, 2), preference: 'webgl' },
 		}))
 		.build();
 	const graphics: Graphics[] = [];
+	let stopReview = function () {};
 	const dispose = async function () {
+		stopReview();
 		try { await world.dispose(); }
 		finally { graphics.forEach(function (shape) { shape.destroy(); }); }
 	};
@@ -25,6 +31,7 @@ const start = async function (container: HTMLElement) {
 		world.addComponent(level.platform.id, 'graphics', platform);
 		world.addComponent(level.player.id, 'graphics', player);
 		world.update(0);
+		stopReview = attachCameraReview(world, level.player.components.localTransform);
 		// The input plugin owns listeners but does not clear held keys on blur.
 		// Release its tracked keyboard inputs when focus leaves the game.
 		const releaseKeys = function () {

@@ -4,7 +4,8 @@ import { createPhysics2DPlugin, createRigidBody, physics2DSystems } from 'ecspre
 import { createAABBCollider, defineCollisionLayers } from 'ecspresso/plugins/physics/collision';
 import { createTransform, createTransformPlugin } from 'ecspresso/plugins/spatial/transform';
 
-export const WORLD = { width: 960, height: 540 } as const;
+// Simulation bounds are independent of the renderer's logical viewport.
+export const LEVEL_BOUNDS = { left: 0, top: 0, right: 960, bottom: 540 } as const;
 export const STEP = 1 / 60;
 export const PLATFORM = { x: 480, y: 410, width: 640, height: 32 } as const;
 export const PLAYER = { width: 32, height: 44, speed: 260, jumpSpeed: 520 } as const;
@@ -76,7 +77,7 @@ const gameplay = definePlugin('gameplay')
 				{ with: ['player', 'localTransform', 'velocity', 'force'], mutates: ['player', 'localTransform', 'velocity', 'force'] },
 				({ entity }) => {
 					const { player, localTransform, velocity, force } = entity.components;
-					if (localTransform.y < WORLD.height + PLAYER.height) return false;
+					if (localTransform.y < LEVEL_BOUNDS.bottom + PLAYER.height) return false;
 					localTransform.x = START.x;
 					localTransform.y = START.y;
 					velocity.x = 0;

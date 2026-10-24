@@ -130,3 +130,33 @@ test('walking off either edge clears grounded state and resets position and all 
 		} finally { await game.world.dispose(); }
 	}
 });
+
+test('camera translation and viewport size leave physics and the level reset boundary unchanged', async () => {
+	const { createCameraPlugin } = await import('ecspresso/plugins/spatial/camera');
+	const { LEVEL_BOUNDS } = await import('../src/game');
+	const worlds = [
+		createGameBuilder({ target: new EventTarget() }).withPlugin(createCameraPlugin({ viewportWidth: 960, viewportHeight: 540 })).build(),
+		createGameBuilder({ target: new EventTarget() }).withPlugin(createCameraPlugin({ viewportWidth: 320, viewportHeight: 900, initial: { x: 10000, y: -2000 } })).build(),
+	];
+	try {
+		for (const world of worlds) await world.initialize();
+		const levels = worlds.map(function (world) { return spawnLevel(world); });
+		for (const [index, world] of worlds.entries()) {
+			const level = levels[index];
+			if (!level) throw new Error('Missing test level.');
+			world.mutateComponent(level.player.id, 'localTransform', function (position) {
+				position.x = 900;
+				position.y = LEVEL_BOUNDS.bottom + PLAYER.height - 1;
+			});
+			world.update(STEP);
+			expect(level.player.components.localTransform.x).toBe(900);
+			expect(level.player.components.localTransform.y).toBeGreaterThan(LEVEL_BOUNDS.bottom);
+			world.getResource('cameraState').setPosition(-9000, 8000);
+			world.update(STEP);
+			expect(level.player.components.localTransform).toMatchObject(START);
+			expect(level.player.components.velocity).toEqual({ x: 0, y: 0 });
+			expect(level.player.components.force).toEqual({ x: 0, y: 0 });
+		}
+		expect(levels[0]?.player.components).toEqual(levels[1]?.player.components);
+	} finally { for (const world of worlds) await world.dispose(); }
+});
