@@ -35,3 +35,6 @@ button:focus-visible { outline: 2px solid #65deeb; outline-offset: 2px; }
 .projectile-controls { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px; margin: 8px 0; }
 .projectile-controls input[type="number"] { width: 85px; font: inherit; color: #e4edf5; background: #15283b; border: 1px solid #59738a; border-radius: 4px; padding: 6px; }
 #projectile-history { color: #65deeb; overflow-wrap: anywhere; }
+
+#beam-review { margin-top: 16px; font-size: 12px; }
+#beam-contacts { color: #65deeb; overflow-wrap: anywhere; }

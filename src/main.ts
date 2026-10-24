@@ -2,6 +2,7 @@ import { Graphics } from 'pixi.js';
 import { createRenderer2DPlugin } from 'ecspresso/plugins/rendering/renderer2D';
 import { createGameBuilder, spawnLevel, PLATFORM, PLAYER, ENEMY } from './game';
 import { createViewCamera, VIEWPORT } from './view';
+import { attachBeamReview } from './beam-review';
 import { attachProjectileReview } from './projectile-review';
 import { attachCombatReview } from './combat-review';
 import { attachCameraReview } from './camera-review';
@@ -21,7 +22,9 @@ const start = async function (container: HTMLElement) {
 	let stopReview = function () {};
 	let stopCombat = function () {};
 	let stopProjectiles = function () {};
+	let stopBeams = function () {};
 	const dispose = async function () {
+		stopBeams();
 		stopProjectiles();
 		stopCombat();
 		stopReview();
@@ -48,6 +51,7 @@ const start = async function (container: HTMLElement) {
 		stopReview = attachCameraReview(world, level.player.components.localTransform);
 		stopCombat = attachCombatReview(world, world.getResource('pixiApp'), world.getResource('rootContainer'), enemyShapes);
 		stopProjectiles = attachProjectileReview(world, world.getResource('pixiApp'), world.getResource('rootContainer'));
+		stopBeams = attachBeamReview(world, world.getResource('pixiApp'), world.getResource('rootContainer'));
 		// The input plugin owns listeners but does not clear held keys on blur.
 		// Release its tracked keyboard inputs when focus leaves the game.
 		const releaseKeys = function () {

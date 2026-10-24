@@ -8,7 +8,7 @@
 	</head>
 	<body>
 		<main>
-			<header><h1>Power Up</h1><p>Combat and projectile tests.</p></header>
+			<header><h1>Power Up</h1><p>Combat, projectile and beam tests.</p></header>
 			<div id="game" role="img" aria-label="Platformer: cyan player on an amber platform. Rose enemies are stationary test targets. Move, jump, and hold J to test attack contact."></div>
 			<footer>
 				<p><strong>Move</strong> A / D or ← / → <span>·</span> <strong>Jump</strong> Space <span>·</span> <strong>Attack</strong> Hold J</p>
@@ -31,6 +31,21 @@
 					<p id="projectile-status" role="status"></p>
 					<p id="projectile-history">Last run: launch to inspect ordered contacts.</p>
 					<p class="hint">Pass-through detection fixture; no damage or impact response. Off-screen shots expire by lifetime. Pan right to follow.</p>
+				</section>
+				<section id="beam-review" aria-label="Sustained beam fixture">
+					<p>Beam review · thin rose targets on both sides of an amber solid.</p>
+					<div class="projectile-controls">
+						<label><input id="beam-active" type="checkbox" /> Beam active</label>
+						<label>Start X <input id="beam-x" type="number" min="-10000" max="10000" value="240" required /></label>
+						<label>Start Y <input id="beam-y" type="number" min="-10000" max="10000" value="110" required /></label>
+						<label>Angle (degrees) <input id="beam-angle" type="number" min="-180" max="180" value="0" required /></label>
+						<label>Length <input id="beam-length" type="number" min="1" max="5000" value="600" required /></label>
+						<label>Width <input id="beam-width" type="number" min="1" max="200" value="12" required /></label>
+						<button id="beam-remove" type="button">Remove beam</button>
+					</div>
+					<p id="beam-status" role="status"></p>
+					<p id="beam-contacts">No active contacts.</p>
+					<p class="hint">Live geometry; flat ends. Targets turn gold during coverage. Reports through solids every active tick. Pan to inspect alignment. Enable again after removal to recreate.</p>
 				</section>
 				<section id="camera-review" aria-label="Temporary camera review controls">
 					<p>Camera review · Pan the view to find the violet marker at world 1120, 270.</p>
