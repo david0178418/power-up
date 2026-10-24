@@ -1,6 +1,6 @@
 # Power Up
 
-A minimal Bun + TypeScript + ECSpresso platformer: one solid amber platform, one cyan player, and a non-colliding violet camera-review marker. No external artwork.
+A minimal Bun + TypeScript + ECSpresso platformer: one solid amber platform, one cyan player, three stationary rose enemy targets, and a non-colliding violet camera-review marker. No external artwork.
 
 ```sh
 bun install --frozen-lockfile
@@ -10,6 +10,7 @@ bun run dev
 Open the URL printed by Bun (normally http://localhost:3000). Click the browser page if keyboard focus is elsewhere. For LAN access, use `bun run dev --hostname=0.0.0.0`.
 
 - Move: **A / D**, **Left / Right**, gamepad **left stick** or **D-pad**.
+- Attack fixture: hold **J** or gamepad **button 2** (standard left face button). Faces the last movement direction.
 - Jump: **Space** or the gamepad **primary face button** (standard button 0).
 - Jump requires ground contact and a fresh press. Airborne presses are discarded; holding jump does not repeat it.
 - Falling below the world returns the player to the middle of the platform with velocity and force reset. Held movement resumes on the next tick.
@@ -28,7 +29,7 @@ TypeScript enables `strict` and all additional type-checking diagnostics: exact 
 
 `src/main.ts` composes the browser application and owns startup, graphics, focus cleanup, page teardown, and Bun hot-reload disposal. ECSpresso's managed `renderer2D` owns Pixi and its ticker; the world owns input listeners. `src/game.ts` composes transform, input, physics, and a small gameplay plugin. Tests use the same simulation without a renderer.
 
-Simulation runs at 60 Hz with explicit ordering: input → player control → physics integration → collision resolution → fall reset. Gravity, motion, restitution-free collisions, transforms, grounded state, and reset all live in ECS components/systems. Physics collision normals establish ground contact after the built-in solver removes penetration and downward velocity. Input is sampled in `fixedUpdate` so jump edges survive render frames with no simulation tick and are consumed once across multiple ticks.
+Simulation runs at 60 Hz with explicit ordering: input → player control → physics integration → collision resolution → fall reset → transform propagation → combat detection. Gravity, motion, restitution-free collisions, transforms, grounded state, and reset all live in ECS components/systems. Physics collision normals establish ground contact after the built-in solver removes penetration and downward velocity. Input is sampled in `fixedUpdate` so jump edges survive render frames with no simulation tick and are consumed once across multiple ticks.
 
 `src/view.ts` defines the 960×540 logical viewport separately from `LEVEL_BOUNDS` in `src/game.ts`. Fall reset still occurs at level bottom 540 plus player height, regardless of camera position or visible dimensions. ECSpresso's camera plugin stores the view center; renderer2D's `camera: true` applies it to the scene, and `screenScale: { mode: 'fit' }` provides uniform scaling and centered letterboxing. A Pixi mask clips world graphics to the logical viewport, including when panning into letterboxed areas. No custom renderer, collision solver, or game loop is needed. One small input integration fix releases tracked keyboard keys on window blur because the installed input plugin does not clear them itself.
 
@@ -37,6 +38,20 @@ The isolated `src/camera-review.ts` adapter adds temporary review buttons below 
 `src/coordinates.ts` exports `worldToScreen` and `screenToWorld`. Their camera argument is the world coordinate at the viewport's **top-left**, obtained by subtracting half the viewport size from ECSpresso's camera center. Screen points use browser **client CSS pixels**, matching `PointerEvent.clientX/clientY`; pass the canvas's current `getBoundingClientRect()` so page position, scrolling, canvas scaling, and centered letterboxing are included. The current adapter uses translation with fixed zoom 1 and rotation 0. Conversions extrapolate within letterbox margins rather than clamping and reject invalid/nonpositive geometry with `RangeError`. The review pointer draws a white ring in world space and shows its world/client coordinates; letterbox points map outside the view and the ring is clipped.
 
 Dependencies are pinned in `package.json` and `bun.lock`: ECSpresso **0.24.1**, Pixi **8.22.0**. Integration was checked against the installed package exports, declarations, implementation, changelog, and the matching [v0.24.1 platformer example](https://github.com/DeeGeeGames/ecspresso/blob/v0.24.1/examples/platformer/platformer.ts) and [plugin documentation](https://github.com/DeeGeeGames/ecspresso/blob/v0.24.1/docs/built-in-plugins.md).
+
+## Combat overlap primitive
+
+`src/combat.ts` provides `createCombatVolume(ownerId, kind, width, height, x, y, active)` and the `combat` plugin. Spawn the returned components with `world.spawnChild(ownerId, ...)`. Each attack/hurtbox is an independent entity with a `combatVolume`, transform, AABB collider, and attack/hurtbox collision layer; it has **no rigid body**. Owner movement colliders remain separate. Installed ECSpresso 0.24.1's detection-only collision plugin handles overlap tests; its physics solver only queries rigid bodies, so these volumes cannot resolve physical collisions. No new dependency or custom detector is needed.
+
+Set `combatVolume.active` to enable/disable either volume; use `removeEntity(volumeId)` to remove it. Default owner removal cascades to its children. Contact forwarding also validates both owners exist, including non-cascading owner removal. Removing a volume's `combatVolume` component stops combat forwarding. No previous-contact cache is retained by the primitive.
+
+`combatContact` is a synchronous, transient event with `{ attackId, ownerId, hurtboxId, targetId }`, once per overlapping attack/hurtbox pair on **every fixed simulation tick**, including sustained overlaps. There are no enter/exit events, deduplication across ticks, or contacts on frames with zero fixed ticks. Multiple fixed ticks in one render frame each report contacts. `combatScan` marks the start of each detection pass for presentation consumers. Consumers retaining events own their history and must revalidate identities before later use. The review adapter clears its display per scan and checks activation/existence again before drawing.
+
+Geometry is the library's smallest supported primitive: world-axis AABBs with positive width and height. Edge touching does not count as overlap. Parent hierarchy translation, rotation, and scale affect the attached **center**; the installed detector keeps dimensions and collider offsets in world units, without rotating or scaling the box. Debug outlines draw these same world-space rectangles inside the existing camera root and viewport mask. They can be toggled without affecting detection. Detection samples after physics and reset on each tick; swept/continuous projectile collision is deferred.
+
+The fixture places one enemy in reach of the initial right-facing attack and two farther away. Enemies are stationary, non-blocking targets with hurtboxes and no damage, health, attacks, or AI. Hold J without moving: the near enemy turns gold and the status reports all contact identities while both bodies stay still. Release J to deactivate. Move through or past targets, turn left, jump, and pan the camera to inspect alignment; uncheck **Show combat outlines** to hide only the debug overlay. Input controls the player's fixture attack activation directly; this is not a swing duration/cooldown or a damage cadence. Teams, self-hit filtering, invulnerability, knockback, combos, and once-per-swing damage remain future combat rules.
+
+`tests/combat.test.ts` covers strict overlap, activation of both kinds, identity, consecutive/multiple/zero fixed ticks, parent transform propagation, volume/component/owner removal (including non-cascading removal), unchanged motion of two overlapping dynamic bodies, and keyboard/gamepad fixture activation/facing/reset. Existing movement and camera tests remain in place.
 
 ## CI and protected delivery
 
