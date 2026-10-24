@@ -8,12 +8,17 @@
 	</head>
 	<body>
 		<main>
-			<header><h1>Power Up</h1><p>One platform. Room to move.</p></header>
-			<div id="game" role="img" aria-label="Platformer: cyan player on an amber platform. Use keyboard or gamepad to move and jump."></div>
+			<header><h1>Power Up</h1><p>Combat overlap test.</p></header>
+			<div id="game" role="img" aria-label="Platformer: cyan player on an amber platform. Rose enemies are stationary test targets. Move, jump, and hold J to test attack contact."></div>
 			<footer>
-				<p><strong>Move</strong> A / D or ← / → <span>·</span> <strong>Jump</strong> Space</p>
-				<p>Gamepad: left stick or D-pad <span>·</span> primary face button to jump</p>
+				<p><strong>Move</strong> A / D or ← / → <span>·</span> <strong>Jump</strong> Space <span>·</span> <strong>Attack</strong> Hold J</p>
+				<p>Gamepad: left stick or D-pad <span>·</span> primary face button to jump <span>·</span> button 2 to attack</p>
 				<p class="hint">Fall off? You’ll return to the platform.</p>
+				<section id="combat-review" aria-label="Combat overlap fixture">
+					<label><input id="combat-outlines" type="checkbox" checked /> Show combat outlines</label>
+					<p id="combat-status" role="status"></p>
+					<p class="hint">Rose enemies are stationary targets. Gold means contact. No damage or body blocking.</p>
+				</section>
 				<section id="camera-review" aria-label="Temporary camera review controls">
 					<p>Camera review · Pan the view to find the violet marker at world 1120, 270.</p>
 					<div class="pan-controls">

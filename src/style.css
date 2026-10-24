@@ -18,6 +18,8 @@ footer span { padding: 0 10px; color: #59738a; }
 footer strong { color: #65deeb; font-weight: 600; }
 .hint { margin-top: 8px; font-size: 12px; }
 #error { padding-top: 16px; color: #ffb3a6; }
+#combat-review { margin-top: 12px; font-size: 12px; }
+#combat-status { color: #ffe08a; min-height: 1.7em; }
 #camera-review { margin-top: 16px; font-size: 12px; color: #8fabc0; }
 .pan-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 8px 0; }
 button { font: inherit; color: #e4edf5; background: #15283b; border: 1px solid #59738a; border-radius: 4px; padding: 6px 10px; cursor: pointer; }
