@@ -14,11 +14,12 @@ export interface MeleeState {
 	held: boolean;
 	direction: -1 | 1;
 	lunge: number;
+	aim: { x: number; y: number };
 	hitTargets: Set<number>;
 }
 
 export const createMeleeState = function (): MeleeState {
-	return { strike: 0, remaining: 0, idle: 0, active: false, queued: false, held: false, direction: 1, lunge: 0, hitTargets: new Set() };
+	return { strike: 0, remaining: 0, idle: 0, active: false, queued: false, held: false, direction: 1, lunge: 0, aim: { x: 1, y: 0 }, hitTargets: new Set() };
 };
 
 export interface HitReaction { remaining: number; push: number }

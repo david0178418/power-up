@@ -141,7 +141,7 @@ test('melee accepts keyboard/gamepad, locks swing facing and resets without lag'
 		expect(customAttack.components.localTransform).toMatchObject({ x: -90, y: 12 });
 		key('keydown', 'a');
 		world.update(STEP);
-		expect(level.attack.components.worldTransform.x).toBe(level.player.components.localTransform.x + 40);
+		expect(level.attack.components.worldTransform.x).toBe(level.player.components.localTransform.x + level.player.components.melee.aim.x * 40);
 		key('keyup', 'a');
 		world.mutateComponent(level.player.id, 'localTransform', function (t) { t.y = 700; });
 		world.update(STEP);
@@ -150,5 +150,26 @@ test('melee accepts keyboard/gamepad, locks swing facing and resets without lag'
 		expect(level.attack.components.worldTransform.y).toBe(START.y);
 		expect(level.attack.components.combatVolume.active).toBe(false);
 		expect(level.player.components.melee.strike).toBe(0);
+	} finally { await world.dispose(); }
+});
+
+test('rotated melee rectangle rejects enclosing-box corners and reports only precise overlaps', async () => {
+	const world = createGameBuilder({ target: new EventTarget() }).build();
+	try {
+		await world.initialize();
+		const owner = world.spawn(createTransform(100, 100));
+		const aim = { x: Math.SQRT1_2, y: Math.SQRT1_2 };
+		world.spawnChild(owner.id, {
+			...createCombatVolume(owner.id, 'attack', 66, 66),
+			combatRectangle: { width: 56, height: 36, aim },
+		});
+		const inside = world.spawn({});
+		const corner = world.spawn({});
+		world.spawn({ ...createCombatVolume(inside.id, 'hurtbox', 2, 2, 120, 120) });
+		world.spawn({ ...createCombatVolume(corner.id, 'hurtbox', 2, 2, 130, 70) });
+		const contacts: CombatContact[] = [];
+		world.eventBus.subscribe('combatContact', function (contact) { contacts.push(contact); });
+		world.update(STEP);
+		expect(contacts.map(function (contact) { return contact.targetId; })).toEqual([inside.id]);
 	} finally { await world.dispose(); }
 });

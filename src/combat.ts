@@ -1,4 +1,5 @@
 import { definePlugin } from 'ecspresso';
+import { beamOverlap, type Beam } from './rectangle-geometry';
 import { collisionSystems, defineCollisionLayers, createAABBCollider } from 'ecspresso/plugins/physics/collision';
 import { createTransform, type TransformWorldConfig } from 'ecspresso/plugins/spatial/transform';
 import type { CollisionComponentTypes, CollisionEventTypes } from 'ecspresso/plugins/physics/collision';
@@ -7,6 +8,25 @@ export const layers = defineCollisionLayers({
 	player: ['platform'], groundEnemy: ['platform', 'groundEnemy'], platform: ['player', 'groundEnemy'], attack: ['hurtbox'], hurtbox: ['attack'],
 });
 type Layer = keyof typeof layers;
+
+export interface CombatRectangle { width: number; height: number; aim: { x: number; y: number } }
+
+export const combatRectangleBeam = function (center: { x: number; y: number }, rectangle: CombatRectangle): Beam {
+	const { aim, width, height } = rectangle;
+	return {
+		from: { x: center.x - aim.x * width / 2, y: center.y - aim.y * width / 2 },
+		to: { x: center.x + aim.x * width / 2, y: center.y + aim.y * width / 2 },
+		width: height,
+	};
+};
+
+export const combatRectanglePoints = function (center: { x: number; y: number }, rectangle: CombatRectangle): number[] {
+	const { aim, width, height } = rectangle;
+	return [[-1, -1], [1, -1], [1, 1], [-1, 1]].flatMap(function ([x = 0, y = 0]) {
+		return [center.x + aim.x * x * width / 2 - aim.y * y * height / 2,
+			center.y + aim.y * x * width / 2 + aim.x * y * height / 2];
+	});
+};
 
 export interface CombatVolume {
 	ownerId: number;
@@ -56,7 +76,7 @@ export const combat = definePlugin('combat')
 		components: CollisionComponentTypes<Layer>;
 		events: CollisionEventTypes<Layer>;
 	}>()
-	.withComponentTypes<{ combatVolume: CombatVolume }>()
+	.withComponentTypes<{ combatVolume: CombatVolume; combatRectangle: CombatRectangle }>()
 	.withEventTypes<{ combatContact: CombatContact; combatScan: undefined }>()
 	.install(function (systems) {
 		systems.addSystem('combat-scan')
@@ -67,7 +87,17 @@ export const combat = definePlugin('combat')
 				const attackId = data.layerA === 'attack' ? data.entityA : data.entityB;
 				const hurtboxId = data.layerA === 'hurtbox' ? data.entityA : data.entityB;
 				const contact = getCombatContact(ecs, attackId, hurtboxId);
-				if (contact) ecs.eventBus.publish('combatContact', contact);
+				if (!contact) return;
+				const rectangle = ecs.getComponent(attackId, 'combatRectangle');
+				if (rectangle) {
+					const center = ecs.getComponent(attackId, 'worldTransform');
+					const target = ecs.getComponent(hurtboxId, 'worldTransform');
+					const box = ecs.getComponent(hurtboxId, 'aabbCollider');
+					if (!center || !target || !box || beamOverlap(combatRectangleBeam(center, rectangle), {
+						...box, x: target.x + (box.offsetX ?? 0), y: target.y + (box.offsetY ?? 0),
+					}) === undefined) return;
+				}
+				ecs.eventBus.publish('combatContact', contact);
 			},
 		});
 	});
