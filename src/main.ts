@@ -8,6 +8,7 @@ import { attachCombatReview } from './combat-review';
 import { attachCameraReview } from './camera-review';
 import { attachGroundEnemyView } from './ground-enemy-view';
 import { attachFullscreen } from './fullscreen';
+import { attachTouchControls } from './touch-controls';
 
 const start = async function (container: HTMLElement) {
 	const world = createGameBuilder()
@@ -24,6 +25,7 @@ const start = async function (container: HTMLElement) {
 	const cleanups: (() => void)[] = [];
 	let transition: Promise<void> | undefined;
 	let shuttingDown = false;
+	let touchControls: ReturnType<typeof attachTouchControls> | undefined;
 	let detachFullscreen: (() => void) | undefined;
 	const gameplayButton = document.getElementById('show-gameplay');
 	const testButton = document.getElementById('show-test');
@@ -41,6 +43,7 @@ const start = async function (container: HTMLElement) {
 		for (const shape of graphics.splice(0)) { shape.removeFromParent(); shape.destroy(); }
 	};
 	const showScreen = async function (screen: 'test' | 'gameplay') {
+		touchControls?.reset();
 		clearScene();
 		// Screen-scoped entities are removed by ECSpresso, including their child volumes.
 		await world.setScreen(screen, {});
@@ -99,6 +102,7 @@ const start = async function (container: HTMLElement) {
 	const showTest = function () { requestScreen('test'); };
 	const dispose = async function () {
 		shuttingDown = true;
+		touchControls?.dispose();
 		detachFullscreen?.();
 		gameplayButton.removeEventListener('click', showGameplay);
 		testButton.removeEventListener('click', showTest);
@@ -109,6 +113,9 @@ const start = async function (container: HTMLElement) {
 	};
 	try {
 		await world.initialize();
+		const playArea = document.getElementById('play-area');
+		if (!(playArea instanceof HTMLElement)) throw new Error('Play area is missing.');
+		touchControls = attachTouchControls(playArea, world.getResource('touchInput'));
 		detachFullscreen = attachFullscreen(function () { world.getResource('pixiApp').resize(); });
 		await showScreen('gameplay');
 		gameplayButton.addEventListener('click', showGameplay);

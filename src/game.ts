@@ -7,6 +7,7 @@ import { createTransform, createTransformPlugin, transformSystems } from 'ecspre
 import { combat, createCombatVolume, layers } from './combat';
 import { projectiles } from './projectile';
 import { beams } from './beam';
+import { createTouchInput } from './touch-input';
 
 // Simulation bounds are independent of the renderer's logical viewport.
 export const LEVEL_BOUNDS = { left: 0, top: 0, right: 960, bottom: 540 } as const;
@@ -28,6 +29,7 @@ const pads = [0, 1, 2, 3];
 const createBaseBuilder = function (input: Pick<InputPluginOptions<Action>, 'target' | 'gamepad'> = {}) {
 	return ECSpresso.create()
 		.withFixedTimestep(STEP)
+		.withResource('touchInput', createTouchInput())
 		.withScreens(function (screens) {
 			return screens.add('test', { initialState: function () { return {}; } })
 				.add('gameplay', { initialState: function () { return {}; } });
@@ -63,6 +65,7 @@ const gameplay = definePlugin('gameplay')
 	.withComponentTypes<{ player: { grounded: boolean; facing: -1 | 1 }; platform: true; enemy: true; groundChaser: true; fixtureAttack: true }>()
 	.withResourceTypes<{ groundSpawns: { remaining: number; spawned: number } }>()
 	.install(function (systems, onCleanup) {
+		let jumpHeld = false;
 		onCleanup(systems.onScreenEnter('gameplay', function ({ ecs }) {
 			const spawns = ecs.getResource('groundSpawns');
 			spawns.remaining = 0;
@@ -110,19 +113,21 @@ const gameplay = definePlugin('gameplay')
 
 		systems.addSystem('player-control').withRef(playerControl)
 			.inPhase('fixedUpdate').after(inputSystems.update).before(physics2DSystems.integrate)
-			.withResources(['inputState'])
+			.withResources(['inputState', 'touchInput'])
 			.setProcessEach(
 				{ with: ['player', 'velocity'], mutates: ['player', 'velocity'] },
-				({ entity, resources: { inputState: input } }) => {
+				({ entity, resources: { inputState: input, touchInput } }) => {
 					const { player, velocity } = entity.components;
 					const digital = Number(input.actions.isActive('right')) - Number(input.actions.isActive('left'));
 					const stick = input.gamepads.reduce(function (strongest, pad) {
 						const x = pad.axis(0);
 						return Math.abs(x) > Math.abs(strongest) ? x : strongest;
 					}, 0);
-					velocity.x = (digital || stick) * PLAYER.speed;
+					velocity.x = (digital || touchInput.move || stick) * PLAYER.speed;
 					if (velocity.x !== 0) player.facing = velocity.x < 0 ? -1 : 1;
-					if (player.grounded && input.actions.justActivated('jump')) velocity.y = -PLAYER.jumpSpeed;
+					const jump = input.actions.isActive('jump') || touchInput.jump;
+					if (player.grounded && jump && !jumpHeld) velocity.y = -PLAYER.jumpSpeed;
+					jumpHeld = jump;
 					// Physics will re-establish contact after integration and resolution.
 					player.grounded = false;
 				},
@@ -130,14 +135,14 @@ const gameplay = definePlugin('gameplay')
 
 		systems.addSystem('fixture-attack')
 			.inPhase('fixedUpdate').after(playerControl).before(transformSystems.propagate)
-			.withResources(['inputState'])
+			.withResources(['inputState', 'touchInput'])
 			.setProcessEach(
 				{ with: ['fixtureAttack', 'combatVolume', 'localTransform'], mutates: ['combatVolume', 'localTransform'] },
-				function ({ entity, ecs, resources: { inputState } }) {
+				function ({ entity, ecs, resources: { inputState, touchInput } }) {
 					const volume = entity.components.combatVolume;
 					const owner = ecs.getComponent(volume.ownerId, 'player');
 					if (volume.kind !== 'attack' || !owner) return false;
-					volume.active = inputState.actions.isActive('attack');
+					volume.active = inputState.actions.isActive('attack') || touchInput.attack;
 					entity.components.localTransform.x = owner.facing * ATTACK.offset;
 					return true;
 				},
