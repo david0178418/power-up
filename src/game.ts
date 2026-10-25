@@ -195,8 +195,8 @@ const gameplay = definePlugin('gameplay')
 								(PLAYER.width + ENEMY.width) / 2 / Math.abs(melee.aim.x),
 								(PLAYER.height + ENEMY.height) / 2 / Math.abs(melee.aim.y),
 							);
-							const gap = target ? Math.max(0, distance - clearance) : Infinity;
-							melee.lunge = Math.min(target ? MELEE.magnetismSpeed : MELEE.lungeSpeed, gap / MELEE.active);
+							const gap = Math.max(0, distance - clearance);
+							melee.lunge = target ? Math.min(MELEE.magnetismSpeed, gap / MELEE.active) : 0;
 							// Add vertical assistance once so attacks preserve jump/fall momentum.
 							velocity.y += melee.aim.y * melee.lunge;
 						}
@@ -208,7 +208,7 @@ const gameplay = definePlugin('gameplay')
 					}
 					if (melee.active) {
 						player.facing = melee.direction;
-						velocity.x = melee.aim.x * melee.lunge;
+						if (melee.lunge > 0) velocity.x = melee.aim.x * melee.lunge;
 					}
 				}
 			});
