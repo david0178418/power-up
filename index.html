@@ -2,7 +2,7 @@
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<title>Power Up</title>
 		<link rel="stylesheet" href="./src/style.css" />
 	</head>
@@ -17,7 +17,11 @@
 				<p id="gameplay-status" role="status">Ground enemies: 0 / 8</p>
 				<button id="restart-gameplay" type="button">Restart sandbox</button>
 			</section>
-			<div id="game" role="img" aria-label="Gameplay sandbox: cyan player on an amber platform. Rose ground enemies spawn and chase the player. Move, jump and hold J to test contact."></div>
+			<div id="play-area">
+				<div id="game" role="img" aria-label="Gameplay sandbox: cyan player on an amber platform. Rose ground enemies spawn and chase the player. Move, jump and hold J to test contact."></div>
+				<button id="toggle-fullscreen" type="button" aria-controls="play-area" aria-pressed="false" hidden>Fullscreen</button>
+				<p id="fullscreen-status" role="status"></p>
+			</div>
 			<footer>
 				<p><strong>Move</strong> A / D or ← / → <span>·</span> <strong>Jump</strong> Space <span>·</span> <strong>Attack</strong> Hold J</p>
 				<p>Gamepad: left stick or D-pad <span>·</span> primary face button to jump <span>·</span> button 2 to attack</p>

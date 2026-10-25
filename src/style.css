@@ -13,6 +13,14 @@ p { margin: 0; }
 header p, .hint { color: #8fabc0; }
 #game { width: 100%; height: min(65vh, 603px); min-height: 180px; overflow: hidden; border: 1px solid #26364a; border-radius: 8px; }
 canvas { display: block; }
+#play-area { position: relative; background: #101c2c; }
+#toggle-fullscreen { position: absolute; top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); min-width: 44px; min-height: 44px; touch-action: manipulation; }
+#fullscreen-status { position: absolute; top: max(60px, calc(env(safe-area-inset-top) + 52px)); right: max(8px, env(safe-area-inset-right)); max-width: 280px; background: #101c2c; font-size: 13px; }
+#fullscreen-status:empty { display: none; }
+#play-area:fullscreen, #play-area.is-expanded { width: 100%; height: 100%; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); display: flex; }
+#play-area.is-expanded { position: fixed; inset: 0; z-index: 100; height: 100vh; height: 100dvh; }
+#play-area:fullscreen #game, #play-area.is-expanded #game { height: 100%; min-height: 0; border: 0; border-radius: 0; }
+html.play-expanded, html.play-expanded body { overflow: hidden; }
 footer { text-align: center; font-size: 14px; line-height: 1.7; margin-top: 18px; }
 footer span { padding: 0 10px; color: #59738a; }
 footer strong { color: #65deeb; font-weight: 600; }

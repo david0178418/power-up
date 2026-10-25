@@ -15,6 +15,8 @@ Open the URL printed by Bun (normally http://localhost:3000). Click the browser 
 - Jump requires ground contact and a fresh press. Airborne presses are discarded; holding jump does not repeat it.
 - Falling below the world returns the player to the middle of the platform with velocity and force reset. Held movement resumes on the next tick.
 
+Use **Fullscreen** in the top-right of the play area to expand the canvas; **Exit fullscreen** returns to the page. The button has a 44px minimum touch target and respects display safe areas. When [native fullscreen](https://developer.mozilla.org/en-US/docs/Web/API/Element/requestFullscreen) is unavailable or rejected, the play area fills the browser viewport (browser chrome may remain). Escape also closes this fallback. Both screens retain the same logical view and letterboxing as the canvas resizes, including on rotation. Movement still uses the keyboard or gamepad; this toggle does not add touch movement controls.
+
 ```sh
 bun run typecheck  # TypeScript
 bun test           # deterministic ECS/input/physics scenarios
