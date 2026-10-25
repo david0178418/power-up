@@ -1,6 +1,6 @@
 # Power Up
 
-A minimal Bun + TypeScript + ECSpresso platformer: one solid amber platform, one cyan player, three stationary rose enemy targets, and a non-colliding violet camera-review marker. No external artwork.
+A Bun + TypeScript + ECSpresso platformer with a gameplay sandbox and a separate primitive test screen. Both use the same amber platform and cyan player. No external artwork.
 
 ```sh
 bun install --frozen-lockfile
@@ -38,6 +38,16 @@ The isolated `src/camera-review.ts` adapter adds temporary review buttons below 
 `src/coordinates.ts` exports `worldToScreen` and `screenToWorld`. Their camera argument is the world coordinate at the viewport's **top-left**, obtained by subtracting half the viewport size from ECSpresso's camera center. Screen points use browser **client CSS pixels**, matching `PointerEvent.clientX/clientY`; pass the canvas's current `getBoundingClientRect()` so page position, scrolling, canvas scaling, and centered letterboxing are included. The current adapter uses translation with fixed zoom 1 and rotation 0. Conversions extrapolate within letterbox margins rather than clamping and reject invalid/nonpositive geometry with `RangeError`. The review pointer draws a white ring in world space and shows its world/client coordinates; letterbox points map outside the view and the ring is clipped.
 
 Dependencies are pinned in `package.json` and `bun.lock`: ECSpresso **0.24.1**, Pixi **8.22.0**. Integration was checked against the installed package exports, declarations, implementation, changelog, and the matching [v0.24.1 platformer example](https://github.com/DeeGeeGames/ecspresso/blob/v0.24.1/examples/platformer/platformer.ts) and [plugin documentation](https://github.com/DeeGeeGames/ecspresso/blob/v0.24.1/docs/built-in-plugins.md).
+
+## Gameplay sandbox
+
+The app opens on **Gameplay**. **Test screen** retains the stationary combat targets, projectile/beam fixtures, and camera review controls. Switching screens starts a fresh level and resets the camera; **Restart sandbox** clears the current gameplay run and its spawn timer. ECSpresso screens own navigation and screen-scoped level entities; presentation adapters release their graphics, subscriptions, ticker callbacks and controls before switching.
+
+One basic ground enemy spawns immediately on the first simulation tick, then every two seconds from alternating platform ends, up to eight live enemies. They walk at 90 world units/second toward the player's horizontal position and stop beside the player without overshooting. Physics keeps them on the platform; horizontal pursuit clamps their bodies inside its edges even when the player leaves the platform. They never jump or fly, and keep chasing horizontally while the player is airborne. Existing movement, jump, gamepad and fall-reset behavior is shared between screens.
+
+Ground enemies have child hurtboxes and respond to the existing held-J contact fixture with a gold tint. A translucent gold rectangle shows the active player attack. There is no health, damage, enemy attack, body blocking, or enemy-to-enemy separation yet; enemies can overlap. Restarting provides a fresh pursuit setup after the population reaches its cap. `GROUND_ENEMY` in `src/game.ts` holds speed, spawn interval and population limit; spawn/chase systems run only on Gameplay. `src/ground-enemy-view.ts` draws current simulation state without separate movement or spawn timers.
+
+`tests/ground-enemies.test.ts` covers spawn cadence and alternating sides, measured pursuit, stopping and reversing, grounded behavior under an airborne target, both platform edges, population bounds/replacement, and repeated screen/restart cleanup including child combat volumes. `bun run check` passes all 41 tests, typechecking and the production build. Production-browser checks at 1280×800/900 and 390×844 observed movement/jump with grounded pursuers, contact feedback, restart, screen switching, the preserved projectile fixture's three ordered contacts, one canvas after switching, and no horizontal page overflow. Portrait uses desktop browser emulation; physical controller/mobile behavior and owner acceptance of feel remain unmeasured.
 
 ## Combat overlap primitive
 

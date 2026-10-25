@@ -6,6 +6,7 @@ import { attachBeamReview } from './beam-review';
 import { attachProjectileReview } from './projectile-review';
 import { attachCombatReview } from './combat-review';
 import { attachCameraReview } from './camera-review';
+import { attachGroundEnemyView } from './ground-enemy-view';
 
 const start = async function (container: HTMLElement) {
 	const world = createGameBuilder()
@@ -19,39 +20,96 @@ const start = async function (container: HTMLElement) {
 		}))
 		.build();
 	const graphics: Graphics[] = [];
-	let stopReview = function () {};
-	let stopCombat = function () {};
-	let stopProjectiles = function () {};
-	let stopBeams = function () {};
-	const dispose = async function () {
-		stopBeams();
-		stopProjectiles();
-		stopCombat();
-		stopReview();
-		try { await world.dispose(); }
-		finally { graphics.forEach(function (shape) { shape.destroy(); }); }
+	const cleanups: (() => void)[] = [];
+	let transition: Promise<void> | undefined;
+	let shuttingDown = false;
+	const gameplayButton = document.getElementById('show-gameplay');
+	const testButton = document.getElementById('show-test');
+	const restartButton = document.getElementById('restart-gameplay');
+	const gameplayControls = document.getElementById('gameplay-controls');
+	const testControls = document.getElementById('test-controls');
+	const description = document.getElementById('screen-description');
+	const hint = document.getElementById('play-hint');
+	if (!(gameplayButton instanceof HTMLButtonElement) || !(testButton instanceof HTMLButtonElement)
+		|| !(restartButton instanceof HTMLButtonElement) || !gameplayControls || !testControls || !description || !hint) {
+		throw new Error('Screen controls are missing.');
+	}
+	const clearScene = function () {
+		for (const cleanup of cleanups.splice(0).reverse()) cleanup();
+		for (const shape of graphics.splice(0)) { shape.removeFromParent(); shape.destroy(); }
 	};
-	try {
-		await world.initialize();
-		const level = spawnLevel(world);
+	const showScreen = async function (screen: 'test' | 'gameplay') {
+		clearScene();
+		// Screen-scoped entities are removed by ECSpresso, including their child volumes.
+		await world.setScreen(screen, {});
+		const level = spawnLevel(world, screen);
+		const camera = world.getResource('cameraState');
+		camera.setPosition(VIEWPORT.width / 2, VIEWPORT.height / 2);
 		const platform = new Graphics().rect(-PLATFORM.width / 2, -PLATFORM.height / 2, PLATFORM.width, PLATFORM.height).fill(0xe6b566);
 		const player = new Graphics().rect(-PLAYER.width / 2, -PLAYER.height / 2, PLAYER.width, PLAYER.height).fill(0x65deeb);
 		graphics.push(platform, player);
 		world.addComponent(level.platform.id, 'graphics', platform);
 		world.addComponent(level.player.id, 'graphics', player);
-		const enemyShapes = new Map<number, Graphics>();
-		for (const { enemy } of level.enemies) {
-			const shape = new Graphics().rect(-ENEMY.width / 2, -ENEMY.height / 2, ENEMY.width, ENEMY.height).fill(0xffffff)
-				.rect(-8, -10, 4, 4).rect(4, -10, 4, 4).fill(0x101c2c);
-			graphics.push(shape);
-			enemyShapes.set(enemy.id, shape);
-			world.addComponent(enemy.id, 'graphics', shape);
+		const app = world.getResource('pixiApp');
+		const root = world.getResource('rootContainer');
+		if (screen === 'test') {
+			const enemyShapes = new Map<number, Graphics>();
+			for (const { enemy } of level.enemies) {
+				const shape = new Graphics().rect(-ENEMY.width / 2, -ENEMY.height / 2, ENEMY.width, ENEMY.height).fill(0xffffff)
+					.rect(-8, -10, 4, 4).rect(4, -10, 4, 4).fill(0x101c2c);
+				graphics.push(shape);
+				enemyShapes.set(enemy.id, shape);
+				world.addComponent(enemy.id, 'graphics', shape);
+			}
+			cleanups.push(attachCameraReview(world, level.player.components.localTransform));
+			cleanups.push(attachCombatReview(world, app, root, enemyShapes));
+			cleanups.push(attachProjectileReview(world, app, root));
+			cleanups.push(attachBeamReview(world, app, root));
+		} else {
+			cleanups.push(attachGroundEnemyView(world, app, root));
 		}
 		world.update(0);
-		stopReview = attachCameraReview(world, level.player.components.localTransform);
-		stopCombat = attachCombatReview(world, world.getResource('pixiApp'), world.getResource('rootContainer'), enemyShapes);
-		stopProjectiles = attachProjectileReview(world, world.getResource('pixiApp'), world.getResource('rootContainer'));
-		stopBeams = attachBeamReview(world, world.getResource('pixiApp'), world.getResource('rootContainer'));
+		gameplayControls.hidden = screen !== 'gameplay';
+		testControls.hidden = screen !== 'test';
+		gameplayButton.setAttribute('aria-pressed', String(screen === 'gameplay'));
+		testButton.setAttribute('aria-pressed', String(screen === 'test'));
+		description.textContent = screen === 'gameplay' ? 'Ground enemy gameplay sandbox.' : 'Combat, projectile and beam tests.';
+		hint.textContent = screen === 'gameplay'
+			? 'Ground enemies chase along the platform. Move and jump to evade. No damage yet; bodies do not block each other. Fall off to return to the platform.'
+			: 'Fall off? You’ll return to the platform.';
+		container.setAttribute('aria-label', screen === 'gameplay'
+			? 'Gameplay sandbox: cyan player on an amber platform. Rose ground enemies spawn and chase the player. Move, jump and hold J to test contact.'
+			: 'Platformer test screen: cyan player on an amber platform with stationary rose targets and combat review fixtures.');
+	};
+	const requestScreen = function (screen: 'test' | 'gameplay') {
+		if (transition || shuttingDown) return;
+		for (const button of [gameplayButton, testButton, restartButton]) button.disabled = true;
+		transition = showScreen(screen).catch(function (error: unknown) {
+			console.error(error);
+			const message = document.getElementById('error');
+			if (message) { message.hidden = false; message.textContent = 'Could not switch screens. Reload to try again.'; }
+		}).finally(function () {
+			transition = undefined;
+			for (const button of [gameplayButton, testButton, restartButton]) button.disabled = false;
+		});
+	};
+	const showGameplay = function () { requestScreen('gameplay'); };
+	const showTest = function () { requestScreen('test'); };
+	const dispose = async function () {
+		shuttingDown = true;
+		gameplayButton.removeEventListener('click', showGameplay);
+		testButton.removeEventListener('click', showTest);
+		restartButton.removeEventListener('click', showGameplay);
+		await transition;
+		clearScene();
+		await world.dispose();
+	};
+	try {
+		await world.initialize();
+		await showScreen('gameplay');
+		gameplayButton.addEventListener('click', showGameplay);
+		testButton.addEventListener('click', showTest);
+		restartButton.addEventListener('click', showGameplay);
 		// The input plugin owns listeners but does not clear held keys on blur.
 		// Release its tracked keyboard inputs when focus leaves the game.
 		const releaseKeys = function () {

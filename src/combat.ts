@@ -4,7 +4,7 @@ import { createTransform, type TransformWorldConfig } from 'ecspresso/plugins/sp
 import type { CollisionComponentTypes, CollisionEventTypes } from 'ecspresso/plugins/physics/collision';
 
 export const layers = defineCollisionLayers({
-	player: ['platform'], platform: ['player'], attack: ['hurtbox'], hurtbox: ['attack'],
+	player: ['platform'], groundEnemy: ['platform'], platform: ['player', 'groundEnemy'], attack: ['hurtbox'], hurtbox: ['attack'],
 });
 type Layer = keyof typeof layers;
 
