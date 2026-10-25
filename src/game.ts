@@ -159,7 +159,7 @@ const gameplay = definePlugin('gameplay')
 					melee.remaining = Math.max(0, melee.remaining - dt);
 					if (melee.active && melee.remaining <= 1e-9) {
 						melee.active = false;
-						melee.gravityTail = MELEE.gravityTail;
+						if (melee.lunge > 0) melee.gravityTail = MELEE.gravityTail;
 						melee.remaining = melee.strike === 3 ? MELEE.finisherRecovery : MELEE.recovery;
 					}
 					if (!melee.active && melee.remaining <= 1e-9) {
@@ -202,7 +202,7 @@ const gameplay = definePlugin('gameplay')
 						}
 					}
 					// Counter gravity only; preserve momentum, other forces, and collision response.
-					if (melee.active || melee.gravityTail > 1e-9) {
+					if ((melee.active && melee.lunge > 0) || melee.gravityTail > 1e-9) {
 						force.x -= physicsConfig.gravity.x * rigidBody.mass * rigidBody.gravityScale;
 						force.y -= physicsConfig.gravity.y * rigidBody.mass * rigidBody.gravityScale;
 					}
