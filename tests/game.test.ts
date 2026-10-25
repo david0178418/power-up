@@ -160,3 +160,42 @@ test('camera translation and viewport size leave physics and the level reset bou
 		expect(levels[0]?.player.components).toEqual(levels[1]?.player.components);
 	} finally { for (const world of worlds) await world.dispose(); }
 });
+
+test('touch movement and simultaneous jump/attack preserve keyboard input and jump edges', async () => {
+	const game = await fixture();
+	try {
+		const touch = game.world.getResource('touchInput');
+		const { localTransform: position, velocity, player } = game.player.components;
+		touch.move = 0.5;
+		touch.attack = true;
+		touch.jump = true;
+		game.world.update(STEP / 2);
+		expect(position.y).toBe(START.y);
+		game.world.update(STEP / 2);
+		expect(velocity.x).toBe(PLAYER.speed / 2);
+		expect(velocity.y).toBeLessThan(0);
+		expect(game.attack.components.combatVolume.active).toBe(true);
+		touch.move = 0;
+		game.key('a', true);
+		game.step();
+		expect(velocity.x).toBe(-PLAYER.speed);
+		game.key('a', false);
+		touch.attack = false;
+		game.step(120);
+		expect(game.attack.components.combatVolume.active).toBe(false);
+		expect(player.grounded).toBe(true);
+		expect(velocity.y).toBe(0);
+		// A second source pressing jump while touch holds it is not a fresh press.
+		game.key(' ', true);
+		game.step();
+		expect(velocity.y).toBe(0);
+		touch.jump = false;
+		game.step();
+		expect(velocity.y).toBe(0);
+		game.key(' ', false);
+		game.step();
+		touch.jump = true;
+		game.step();
+		expect(velocity.y).toBeLessThan(0);
+	} finally { await game.world.dispose(); }
+});
