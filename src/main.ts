@@ -7,6 +7,7 @@ import { attachProjectileReview } from './projectile-review';
 import { attachCombatReview } from './combat-review';
 import { attachCameraReview } from './camera-review';
 import { attachGroundEnemyView } from './ground-enemy-view';
+import { attachFullscreen } from './fullscreen';
 
 const start = async function (container: HTMLElement) {
 	const world = createGameBuilder()
@@ -23,6 +24,7 @@ const start = async function (container: HTMLElement) {
 	const cleanups: (() => void)[] = [];
 	let transition: Promise<void> | undefined;
 	let shuttingDown = false;
+	let detachFullscreen: (() => void) | undefined;
 	const gameplayButton = document.getElementById('show-gameplay');
 	const testButton = document.getElementById('show-test');
 	const restartButton = document.getElementById('restart-gameplay');
@@ -97,6 +99,7 @@ const start = async function (container: HTMLElement) {
 	const showTest = function () { requestScreen('test'); };
 	const dispose = async function () {
 		shuttingDown = true;
+		detachFullscreen?.();
 		gameplayButton.removeEventListener('click', showGameplay);
 		testButton.removeEventListener('click', showTest);
 		restartButton.removeEventListener('click', showGameplay);
@@ -106,6 +109,7 @@ const start = async function (container: HTMLElement) {
 	};
 	try {
 		await world.initialize();
+		detachFullscreen = attachFullscreen(function () { world.getResource('pixiApp').resize(); });
 		await showScreen('gameplay');
 		gameplayButton.addEventListener('click', showGameplay);
 		testButton.addEventListener('click', showTest);
