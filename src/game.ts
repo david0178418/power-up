@@ -8,6 +8,7 @@ import { createHealth, createHealthPlugin } from 'ecspresso/plugins/combat/healt
 import { combat, createCombatVolume, layers } from './combat';
 import { projectiles } from './projectile';
 import { beams } from './beam';
+import { hitStop, SIMULATION_GROUP } from './hit-stop';
 import { createTouchInput } from './touch-input';
 import { createMeleeState, inMeleeCone, MELEE, type MeleeState, type HitReaction } from './melee';
 
@@ -34,16 +35,17 @@ const createBaseBuilder = function (input: Pick<InputPluginOptions<Action>, 'tar
 	return ECSpresso.create()
 		.withFixedTimestep(STEP)
 		.withResource('touchInput', createTouchInput())
+		.withPlugin(hitStop)
 		.withScreens(function (screens) {
 			return screens.add('test', { initialState: function () { return {}; } })
 				.add('gameplay', { initialState: function () { return {}; } });
 		})
-		.withPlugin(createTransformPlugin({ phase: 'fixedUpdate', after: [fallReset] }))
+		.withPlugin(createTransformPlugin({ systemGroup: SIMULATION_GROUP, phase: 'fixedUpdate', after: [fallReset] }))
 		.withPlugin(createPhysics2DPlugin({
-			gravity: { x: 0, y: 1400 }, layers,
+			gravity: { x: 0, y: 1400 }, layers, systemGroup: SIMULATION_GROUP,
 			before: [physics2DSystems.collide],
 		}))
-		.withPlugin(createCollisionPlugin({ layers, phase: 'fixedUpdate', after: [transformSystems.propagate] }))
+		.withPlugin(createCollisionPlugin({ systemGroup: SIMULATION_GROUP, layers, phase: 'fixedUpdate', after: [transformSystems.propagate] }))
 		.withPlugin(combat)
 		.withPlugin(projectiles)
 		.withPlugin(beams)
@@ -71,13 +73,22 @@ const gameplay = definePlugin('gameplay')
 	.withResourceTypes<{ groundSpawns: { remaining: number; spawned: number } }>()
 	.install(function (systems, onCleanup) {
 		let jumpHeld = false;
+		let jumpQueued = false;
+		const resetInputAndHitStop = function () {
+			jumpHeld = false;
+			jumpQueued = false;
+			systems.getResource('hitStop').remaining = 0;
+			systems.enableSystemGroup(SIMULATION_GROUP);
+		};
+		onCleanup(systems.onScreenEnter('test', resetInputAndHitStop));
 		onCleanup(systems.onScreenEnter('gameplay', function ({ ecs }) {
+			resetInputAndHitStop();
 			const spawns = ecs.getResource('groundSpawns');
 			spawns.remaining = 0;
 			spawns.spawned = 0;
 		}));
 		systems.addResource('groundSpawns', { remaining: 0, spawned: 0 });
-		systems.addSystem('ground-spawn').withRef(groundSpawn)
+		systems.addSystem('ground-spawn').inGroup(SIMULATION_GROUP).withRef(groundSpawn)
 			.inScreens(['gameplay']).inPhase('fixedUpdate').before(physics2DSystems.integrate)
 			.withResources(['groundSpawns'])
 			.addQuery('enemies', { with: ['groundChaser', 'localTransform'] })
@@ -105,7 +116,7 @@ const gameplay = definePlugin('gameplay')
 				groundSpawns.spawned++;
 			});
 
-		systems.addSystem('ground-chase')
+		systems.addSystem('ground-chase').inGroup(SIMULATION_GROUP)
 			.inScreens(['gameplay']).inPhase('fixedUpdate').after(groundSpawn).before(enemyReaction).before(physics2DSystems.integrate)
 			.addSingleton('target', { with: ['player', 'localTransform'] })
 			.addQuery('enemies', { with: ['groundChaser', 'localTransform', 'velocity'], mutates: ['velocity'] })
@@ -122,7 +133,23 @@ const gameplay = definePlugin('gameplay')
 				}
 			});
 
-		systems.addSystem('player-control').withRef(playerControl)
+		// Continue sampling edges during hit stop; short taps survive until simulation resumes.
+		systems.addSystem('combat-input')
+			.inPhase('fixedUpdate').after(inputSystems.update).before(playerControl).before(meleeControl)
+			.withResources(['inputState', 'touchInput'])
+			.addQuery('players', { with: ['melee'], mutates: ['melee'] })
+			.setProcess(function ({ queries, resources: { inputState, touchInput } }) {
+				const jump = inputState.actions.isActive('jump') || touchInput.jump;
+				if (jump && !jumpHeld) jumpQueued = true;
+				jumpHeld = jump;
+				const held = inputState.actions.isActive('attack') || touchInput.attack;
+				for (const { components: { melee } } of queries.players) {
+					if (held && !melee.held) melee.queued = true;
+					melee.held = held;
+				}
+			});
+
+		systems.addSystem('player-control').inGroup(SIMULATION_GROUP).withRef(playerControl)
 			.inPhase('fixedUpdate').after(inputSystems.update).before(physics2DSystems.integrate)
 			.withResources(['inputState', 'touchInput'])
 			.setProcessEach(
@@ -136,25 +163,21 @@ const gameplay = definePlugin('gameplay')
 					}, 0);
 					velocity.x = (digital || touchInput.move || stick) * PLAYER.speed;
 					if (velocity.x !== 0) player.facing = velocity.x < 0 ? -1 : 1;
-					const jump = input.actions.isActive('jump') || touchInput.jump;
-					if (player.grounded && jump && !jumpHeld) velocity.y = -PLAYER.jumpSpeed;
-					jumpHeld = jump;
+					if (player.grounded && jumpQueued) velocity.y = -PLAYER.jumpSpeed;
+					jumpQueued = false;
 					// Physics will re-establish contact after integration and resolution.
 					player.grounded = false;
 				},
 			);
 
-		systems.addSystem('melee-control').withRef(meleeControl)
+		systems.addSystem('melee-control').inGroup(SIMULATION_GROUP).withRef(meleeControl)
 			.inPhase('fixedUpdate').after(playerControl).before(physics2DSystems.integrate)
-			.withResources(['inputState', 'touchInput', 'physicsConfig'])
+			.withResources(['physicsConfig'])
 			.addQuery('targets', { with: ['enemy', 'localTransform'] })
 			.addQuery('hurtboxes', { with: ['combatVolume'] })
 			.addQuery('players', { with: ['player', 'melee', 'velocity', 'localTransform', 'force', 'rigidBody'], mutates: ['player', 'melee', 'velocity', 'force'] })
-			.setProcess(function ({ queries, dt, resources: { inputState, touchInput, physicsConfig } }) {
-				const held = inputState.actions.isActive('attack') || touchInput.attack;
+			.setProcess(function ({ queries, dt, resources: { physicsConfig } }) {
 				for (const { components: { melee, player, velocity, localTransform: position, force, rigidBody } } of queries.players) {
-					if (held && !melee.held) melee.queued = true;
-					melee.held = held;
 					melee.gravityTail = Math.max(0, melee.gravityTail - dt);
 					melee.remaining = Math.max(0, melee.remaining - dt);
 					if (melee.active && melee.remaining <= 1e-9) {
@@ -169,7 +192,7 @@ const gameplay = definePlugin('gameplay')
 					if (!melee.active && melee.remaining <= 1e-9) {
 						melee.idle += dt;
 						if (melee.idle >= MELEE.reset) melee.strike = 0;
-						if (held || melee.queued) {
+						if (melee.held || melee.queued) {
 							melee.strike = melee.strike % 3 + 1;
 							melee.active = true;
 							melee.remaining = MELEE.active;
@@ -217,7 +240,7 @@ const gameplay = definePlugin('gameplay')
 				}
 			});
 
-		systems.addSystem('fixture-attack')
+		systems.addSystem('fixture-attack').inGroup(SIMULATION_GROUP)
 			.inPhase('fixedUpdate').after(meleeControl).after(fallReset).before(transformSystems.propagate)
 			.setProcessEach(
 				{ with: ['fixtureAttack', 'combatVolume', 'localTransform', 'aabbCollider', 'combatRectangle'], mutates: ['combatVolume', 'localTransform', 'aabbCollider', 'combatRectangle'] },
@@ -237,7 +260,7 @@ const gameplay = definePlugin('gameplay')
 				},
 			);
 
-		systems.addSystem('enemy-reaction').withRef(enemyReaction)
+		systems.addSystem('enemy-reaction').inGroup(SIMULATION_GROUP).withRef(enemyReaction)
 			.inPhase('fixedUpdate').after(groundSpawn).before(physics2DSystems.integrate)
 			.setProcessEach(
 				{ with: ['enemy', 'hitReaction', 'localTransform', 'velocity'], mutates: ['hitReaction', 'velocity'] },
@@ -259,7 +282,7 @@ const gameplay = definePlugin('gameplay')
 		// Reserve each body's travel against the other solid enemy boxes. The physics
 		// solver resolves individual pairs, but cannot fully separate a compressed crowd
 		// in one pass. Preventing penetration also keeps edge guards intact under pressure.
-		systems.addSystem('enemy-spacing')
+		systems.addSystem('enemy-spacing').inGroup(SIMULATION_GROUP)
 			.inPhase('fixedUpdate').after(enemyReaction).before(physics2DSystems.integrate)
 			.addQuery('enemies', { with: ['enemy', 'localTransform', 'velocity', 'aabbCollider'], mutates: ['velocity'] })
 			.setProcess(function ({ queries, dt }) {
@@ -297,6 +320,8 @@ const gameplay = definePlugin('gameplay')
 					reaction.remaining = melee.strike === 3 ? MELEE.finisherStun : MELEE.stun;
 					reaction.push = melee.direction * (melee.strike === 3 ? MELEE.finisherPushSpeed : MELEE.pushSpeed);
 				});
+				const stop = ecs.getResource('hitStop');
+				stop.remaining = Math.max(stop.remaining, melee.strike === 3 ? MELEE.finisherHitStop : MELEE.hitStop);
 				ecs.eventBus.publish('damage', { entityId: data.targetId, amount: 1, sourceId: data.ownerId });
 			},
 		});
@@ -323,7 +348,7 @@ const gameplay = definePlugin('gameplay')
 			},
 		});
 
-		systems.addSystem('fall-reset').withRef(fallReset)
+		systems.addSystem('fall-reset').inGroup(SIMULATION_GROUP).withRef(fallReset)
 			.inPhase('fixedUpdate').after(physics2DSystems.collide)
 			.setProcessEach(
 				{ with: ['player', 'melee', 'localTransform', 'velocity', 'force'], mutates: ['player', 'melee', 'localTransform', 'velocity', 'force'] },

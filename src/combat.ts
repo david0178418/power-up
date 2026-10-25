@@ -1,3 +1,4 @@
+import { SIMULATION_GROUP } from './hit-stop';
 import { definePlugin } from 'ecspresso';
 import { beamOverlap, type Beam } from './rectangle-geometry';
 import { collisionSystems, defineCollisionLayers, createAABBCollider } from 'ecspresso/plugins/physics/collision';
@@ -79,7 +80,7 @@ export const combat = definePlugin('combat')
 	.withComponentTypes<{ combatVolume: CombatVolume; combatRectangle: CombatRectangle }>()
 	.withEventTypes<{ combatContact: CombatContact; combatScan: undefined }>()
 	.install(function (systems) {
-		systems.addSystem('combat-scan')
+		systems.addSystem('combat-scan').inGroup(SIMULATION_GROUP)
 			.inPhase('fixedUpdate').before(collisionSystems.detect)
 			.setProcess(function ({ ecs }) { ecs.eventBus.publish('combatScan', undefined); });
 		systems.addSystem('combat-contact').setEventHandlers({

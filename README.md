@@ -132,3 +132,20 @@ Projectile production-browser validation at 1280×1150 observed the default thre
 Touch integration uses a small PointerEvent adapter because the pinned ECSpresso 0.24.1 input plugin provides pointer buttons but no floating joystick, independent multi-touch controls, or public source-aware virtual actions. The adapter feeds a typed `touchInput` resource; player control combines it with ECSpresso keyboard/gamepad input without synthetic key events or changes to dependency internals. Keyboard/D-pad takes movement priority, then touch, then the gamepad stick. Jump edges are sampled from the combined held state once per fixed tick.
 
 Touch validation: `bun run check` passes 43 tests, typechecking, and production build. Production-preview browser checks at 390×844 and 844×390 exercised synthetic touch pointer events (with capture methods simulated): initial-point anchoring, simultaneous movement/jump/attack, independent action fingers, cancellation, blur, screen changes, resize cleanup, and fullscreen fallback layout. Screenshots showed the cyan player jumping with an active attack, and unobstructed controls below the platform in landscape fullscreen. Touch capability was simulated in the desktop browser. Native mobile pointer capture, physical touch devices, and subjective feel remain unmeasured.
+
+
+## Melee hit stop
+
+Confirmed melee damage pauses gameplay for 50 ms (three fixed ticks), or 80 ms on
+strike three (rounded up to five ticks, about 83 ms). Misses do not pause. Hits on
+several enemies use the longest requested pause rather than adding durations.
+The impact tick completes so damage and death appear immediately; subsequent
+paused ticks hold physics, combo/recovery, stun/pushback, enemy spawning,
+projectiles, and beam scans. Paused time is consumed without a catch-up burst.
+Input and rendering continue, with sampled attack/jump taps buffered until play
+resumes. Screen switches and sandbox restarts clear the pause. Explicit external
+damage events still complete their synchronous health/death cleanup.
+
+Defaults live in `src/melee.ts`; `src/hit-stop.ts` owns the fixed-tick gate.
+`tests/hit-stop.test.ts` covers duration, multi-target hits, frozen gameplay,
+continued rendering, buffered input, misses, screen resets, and external death.

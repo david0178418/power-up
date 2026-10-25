@@ -1,3 +1,4 @@
+import { SIMULATION_GROUP } from './hit-stop';
 import { definePlugin, defineSystemRef } from 'ecspresso';
 import { collisionSystems, type CollisionComponentTypes } from 'ecspresso/plugins/physics/collision';
 import type { Physics2DOwnComponentTypes } from 'ecspresso/plugins/physics/physics2D';
@@ -76,7 +77,7 @@ export const projectiles = definePlugin('projectiles')
 	.withComponentTypes<{ projectile: Projectile }>()
 	.withEventTypes<{ projectileSweep: ProjectileSweep }>()
 	.install(function (systems) {
-		systems.addSystem('projectile-move').withRef(move)
+		systems.addSystem('projectile-move').inGroup(SIMULATION_GROUP).withRef(move)
 			.inPhase('fixedUpdate').before(transformSystems.propagate)
 			.setProcessEach(
 				{ with: ['projectile', 'localTransform'], mutates: ['projectile', 'localTransform'] },
@@ -103,7 +104,7 @@ export const projectiles = definePlugin('projectiles')
 					projectile.remainingLifetime = remaining <= roundoff ? 0 : remaining;
 				},
 			);
-		systems.addSystem('projectile-sweep')
+		systems.addSystem('projectile-sweep').inGroup(SIMULATION_GROUP)
 			.inPhase('fixedUpdate').after(move, collisionSystems.detect)
 			.addQuery('shots', { with: ['projectile', 'combatVolume', 'localTransform', 'aabbCollider'], mutates: [] })
 			.addQuery('targets', { with: ['combatVolume', 'worldTransform', 'aabbCollider'], mutates: [] })

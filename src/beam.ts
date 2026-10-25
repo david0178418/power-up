@@ -1,3 +1,4 @@
+import { SIMULATION_GROUP } from './hit-stop';
 import { definePlugin } from 'ecspresso';
 import { collisionSystems, type CollisionComponentTypes } from 'ecspresso/plugins/physics/collision';
 import type { Physics2DOwnComponentTypes } from 'ecspresso/plugins/physics/physics2D';
@@ -36,7 +37,7 @@ export const beams = definePlugin('beams')
 	.withComponentTypes<{ beam: Beam }>()
 	.withEventTypes<{ beamScan: BeamScan }>()
 	.install(function (systems) {
-		systems.addSystem('beam-scan').inPhase('fixedUpdate').after(collisionSystems.detect)
+		systems.addSystem('beam-scan').inGroup(SIMULATION_GROUP).inPhase('fixedUpdate').after(collisionSystems.detect)
 			.addQuery('beams', { with: ['beam'], mutates: [] })
 			.addQuery('targets', { with: ['combatVolume', 'worldTransform', 'aabbCollider'], mutates: [] })
 			.addQuery('solids', { with: ['rigidBody', 'worldTransform', 'aabbCollider'], mutates: [] })
