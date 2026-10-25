@@ -78,7 +78,7 @@ const gameplay = definePlugin('gameplay')
 		systems.addSystem('ground-spawn').withRef(groundSpawn)
 			.inScreens(['gameplay']).inPhase('fixedUpdate').before(physics2DSystems.integrate)
 			.withResources(['groundSpawns'])
-			.addQuery('enemies', { with: ['groundChaser'] })
+			.addQuery('enemies', { with: ['groundChaser', 'localTransform'] })
 			.runWhenEmpty()
 			.setProcess(function ({ ecs, dt, resources: { groundSpawns }, queries }) {
 				groundSpawns.remaining -= dt;
@@ -86,6 +86,10 @@ const gameplay = definePlugin('gameplay')
 				groundSpawns.remaining = GROUND_ENEMY.spawnInterval;
 				if (queries.enemies.length >= GROUND_ENEMY.limit) return;
 				const x = PLATFORM.x + (groundSpawns.spawned % 2 === 0 ? -1 : 1) * (PLATFORM.width / 2 - ENEMY.width);
+				// Wait for room rather than creating intersecting solid bodies at a crowded edge.
+				if (queries.enemies.some(function ({ components: { localTransform } }) {
+					return Math.abs(localTransform.x - x) < ENEMY.width;
+				})) return;
 				// Immediate visibility lets the child hurtbox and this tick's physics share the new owner.
 				const enemy = ecs.spawn({
 					enemy: true, groundChaser: true, hitReaction: { remaining: 0, push: 0 },
@@ -219,6 +223,35 @@ const gameplay = definePlugin('gameplay')
 					reaction.push *= Math.exp(-12 * dt);
 				},
 			);
+
+		// Reserve each body's travel against the other solid enemy boxes. The physics
+		// solver resolves individual pairs, but cannot fully separate a compressed crowd
+		// in one pass. Preventing penetration also keeps edge guards intact under pressure.
+		systems.addSystem('enemy-spacing')
+			.inPhase('fixedUpdate').after(enemyReaction).before(physics2DSystems.integrate)
+			.addQuery('enemies', { with: ['enemy', 'localTransform', 'velocity', 'aabbCollider'], mutates: ['velocity'] })
+			.setProcess(function ({ queries, dt }) {
+				const bodies = queries.enemies.map(function ({ components }) {
+					return { ...components, x: components.localTransform.x + (components.aabbCollider.offsetX ?? 0) };
+				});
+				for (const body of bodies) {
+					const { velocity, localTransform: position, aabbCollider: box } = body;
+					let travel = velocity.x * dt;
+					for (const other of bodies) {
+						if (other === body) continue;
+						const verticalGap = Math.abs(position.y + (box.offsetY ?? 0)
+							- other.localTransform.y - (other.aabbCollider.offsetY ?? 0));
+						if (verticalGap >= (box.height + other.aabbCollider.height) / 2) continue;
+						const distance = other.x - body.x;
+						const gap = Math.max(0, Math.abs(distance) - (box.width + other.aabbCollider.width) / 2);
+						if (distance > 0) travel = Math.min(travel, gap);
+						if (distance < 0) travel = Math.max(travel, -gap);
+					}
+					velocity.x = travel / dt;
+					// Later bodies see this body's reserved endpoint; earlier bodies saw its start.
+					body.x += travel;
+				}
+			});
 
 		systems.addSystem('melee-hit').setEventHandlers({
 			combatContact({ data, ecs }) {

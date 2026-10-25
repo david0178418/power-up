@@ -81,6 +81,64 @@ test('spawn cap bounds a long run and removed enemies can be replaced', async ()
 	} finally { await world.dispose(); }
 });
 
+test('solid enemy boxes stay separate through crowding, pursuit reversals and knockback at both edges', async () => {
+	const { world, level, step } = await fixture();
+	try {
+		let maximumOverlap = 0;
+		let outsidePlatform = false;
+		const advance = function (ticks: number, targetX?: number) {
+			for (let tick = 0; tick < ticks; tick++) {
+				if (targetX !== undefined) {
+					world.mutateComponent(level.player.id, 'localTransform', function (p) { p.x = targetX; p.y = 120; });
+					world.mutateComponent(level.player.id, 'velocity', function (v) { v.y = 0; });
+				}
+				step();
+				const positions = world.getEntitiesWithQuery(['groundChaser', 'localTransform'])
+					.map(function (e) { return e.components.localTransform; }).sort(function (a, b) { return a.x - b.x; });
+				for (const [index, position] of positions.entries()) {
+					const previous = positions[index - 1];
+					if (previous && Math.abs(position.y - previous.y) < ENEMY.height) {
+						maximumOverlap = Math.max(maximumOverlap, ENEMY.width - (position.x - previous.x));
+					}
+					outsidePlatform ||= position.x < PLATFORM.x - PLATFORM.width / 2 + ENEMY.width / 2 - 1e-9
+						|| position.x > PLATFORM.x + PLATFORM.width / 2 - ENEMY.width / 2 + 1e-9;
+				}
+			}
+		};
+		advance(2400);
+		expect(world.getEntitiesWithQuery(['groundChaser'])).toHaveLength(GROUND_ENEMY.limit);
+		for (const direction of [-1, 1] as const) {
+			advance(600, PLATFORM.x + direction * 1000);
+			for (const enemy of world.getEntitiesWithQuery(['groundChaser', 'hitReaction'])) {
+				world.mutateComponent(enemy.id, 'hitReaction', function (reaction) { reaction.remaining = 0.5; reaction.push = direction * 230; });
+			}
+			advance(60, PLATFORM.x + direction * 1000);
+		}
+		expect(maximumOverlap).toBeLessThan(1e-9);
+		expect(outsidePlatform).toBe(false);
+	} finally { await world.dispose(); }
+});
+
+test('an occupied spawn box delays that side until there is room', async () => {
+	const { world, level, step } = await fixture();
+	try {
+		step();
+		const first = world.getEntitiesWithQuery(['groundChaser', 'localTransform'])[0];
+		if (!first) throw new Error('Missing ground enemy.');
+		const spawnX = PLATFORM.x - PLATFORM.width / 2 + ENEMY.width;
+		for (let tick = 0; tick < 240; tick++) {
+			world.mutateComponent(first.id, 'localTransform', function (p) { p.x = spawnX; });
+			world.mutateComponent(level.player.id, 'localTransform', function (p) { p.x = spawnX; });
+			step();
+		}
+		expect(world.getResource('groundSpawns').spawned).toBe(2);
+		expect(world.getEntitiesWithQuery(['groundChaser'])).toHaveLength(2);
+		world.removeEntity(first.id);
+		step(120);
+		expect(world.getResource('groundSpawns').spawned).toBe(3);
+	} finally { await world.dispose(); }
+});
+
 test('switching and restarting screens removes prior entities and volumes, resets spawns, and preserves stationary fixtures', async () => {
 	const { world, step } = await fixture();
 	try {
