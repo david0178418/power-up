@@ -2,6 +2,7 @@ import { Graphics, type Application, type Container } from 'pixi.js';
 import type { GameWorld } from './game';
 import { ENEMY, GROUND_ENEMY, PLAYER } from './game';
 import { VIEWPORT } from './view';
+import { combatRectanglePoints } from './combat';
 import { drawHealthBar } from './health-view';
 
 // Presentation follows live ECS entities; no second spawn timer or movement loop.
@@ -30,8 +31,8 @@ export const attachGroundEnemyView = function (
 			drawing.rect(position.x + facing * 6 - 2, position.y - 10, 4, 4).fill(0x101c2c);
 			drawHealthBar(drawing, health, position.x, position.y - ENEMY.height / 2 - 9, ENEMY.width);
 		}
-		for (const { components: { fixtureAttack, combatVolume, worldTransform: p, aabbCollider: box } } of world.getEntitiesWithQuery(['fixtureAttack', 'combatVolume', 'worldTransform', 'aabbCollider'])) {
-			if (fixtureAttack && combatVolume.active) drawing.rect(p.x - box.width / 2, p.y - box.height / 2, box.width, box.height)
+		for (const { components: { fixtureAttack, combatVolume, worldTransform: p, combatRectangle: rectangle } } of world.getEntitiesWithQuery(['fixtureAttack', 'combatVolume', 'worldTransform', 'combatRectangle'])) {
+			if (fixtureAttack && combatVolume.active) drawing.poly(combatRectanglePoints(p, rectangle))
 				.fill({ color: 0xffe08a, alpha: 0.25 }).stroke({ color: 0xffe08a, width: 2 });
 		}
 		const melee = player?.components.melee;

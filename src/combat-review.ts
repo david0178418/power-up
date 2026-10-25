@@ -1,6 +1,6 @@
 import { Graphics, type Application, type Container } from 'pixi.js';
 import type { GameWorld } from './game';
-import type { CombatContact } from './combat';
+import { combatRectanglePoints, type CombatContact } from './combat';
 import { ENEMY } from './game';
 import { drawHealthBar } from './health-view';
 
@@ -41,8 +41,12 @@ export const attachCombatReview = function (
 			? live.map(function (contact) { return `Contact: attack ${contact.attackId} · owner ${contact.ownerId} → enemy ${contact.targetId} · hurtbox ${contact.hurtboxId}`; }).join(' | ')
 			: active ? 'Attack active · no contact' : 'Between strikes · tap or hold J / gamepad button 2';
 		if (!toggle.checked) return;
-		for (const { components: { combatVolume: volume, worldTransform: position, aabbCollider: box } } of volumes) {
+		for (const { components: { combatVolume: volume, worldTransform: position, aabbCollider: box, combatRectangle: rectangle } } of volumes) {
 			if (!volume.active || !world.getEntity(volume.ownerId)) continue;
+			if (rectangle) {
+				outlines.poly(combatRectanglePoints(position, rectangle)).stroke({ color: 0xffe08a, width: 2 });
+				continue;
+			}
 			// Match ECSpresso's world-axis AABB exactly, including its unscaled dimensions.
 			outlines.rect(position.x + (box.offsetX ?? 0) - box.width / 2, position.y + (box.offsetY ?? 0) - box.height / 2, box.width, box.height)
 				.stroke({ color: volume.kind === 'attack' ? 0xffe08a : 0xff8f9c, width: 2 });

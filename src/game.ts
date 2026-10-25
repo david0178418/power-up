@@ -183,13 +183,24 @@ const gameplay = definePlugin('gameplay')
 								const distance = function (p: { x: number; y: number }) { return Math.hypot(p.x - position.x, p.y - position.y); };
 								return distance(a.components.localTransform) - distance(b.components.localTransform) || a.id - b.id;
 							})[0];
-							const gap = target ? Math.max(0, (target.components.localTransform.x - position.x) * melee.direction - (PLAYER.width + ENEMY.width) / 2) : Infinity;
+							const dx = target ? target.components.localTransform.x - position.x : melee.direction;
+							const dy = target ? target.components.localTransform.y - position.y : 0;
+							const distance = Math.hypot(dx, dy);
+							melee.aim = { x: dx / distance, y: dy / distance };
+							// Stop when the two physical boxes meet along the chosen ray.
+							const clearance = Math.min(
+								(PLAYER.width + ENEMY.width) / 2 / Math.abs(melee.aim.x),
+								(PLAYER.height + ENEMY.height) / 2 / Math.abs(melee.aim.y),
+							);
+							const gap = target ? Math.max(0, distance - clearance) : Infinity;
 							melee.lunge = Math.min(target ? MELEE.magnetismSpeed : MELEE.lungeSpeed, gap / MELEE.active);
+							// Add vertical assistance once so attacks preserve jump/fall momentum.
+							velocity.y += melee.aim.y * melee.lunge;
 						}
 					}
 					if (melee.active) {
 						player.facing = melee.direction;
-						velocity.x = melee.direction * melee.lunge;
+						velocity.x = melee.aim.x * melee.lunge;
 					}
 				}
 			});
@@ -197,13 +208,19 @@ const gameplay = definePlugin('gameplay')
 		systems.addSystem('fixture-attack')
 			.inPhase('fixedUpdate').after(meleeControl).after(fallReset).before(transformSystems.propagate)
 			.setProcessEach(
-				{ with: ['fixtureAttack', 'combatVolume', 'localTransform'], mutates: ['combatVolume', 'localTransform'] },
+				{ with: ['fixtureAttack', 'combatVolume', 'localTransform', 'aabbCollider', 'combatRectangle'], mutates: ['combatVolume', 'localTransform', 'aabbCollider', 'combatRectangle'] },
 				function ({ entity, ecs }) {
 					const volume = entity.components.combatVolume;
 					const melee = ecs.getComponent(volume.ownerId, 'melee');
 					if (volume.kind !== 'attack' || !melee) return false;
 					volume.active = melee.active;
-					entity.components.localTransform.x = melee.direction * ATTACK.offset;
+					const { aim } = melee;
+					entity.components.localTransform.x = aim.x * ATTACK.offset;
+					entity.components.localTransform.y = aim.y * ATTACK.offset;
+					entity.components.combatRectangle.aim = { ...aim };
+					// Broad phase encloses the rotated rectangle; combat filters its corners.
+					entity.components.aabbCollider.width = Math.abs(aim.x) * ATTACK.width + Math.abs(aim.y) * ATTACK.height;
+					entity.components.aabbCollider.height = Math.abs(aim.y) * ATTACK.width + Math.abs(aim.x) * ATTACK.height;
 					return true;
 				},
 			);
@@ -337,7 +354,7 @@ export const spawnLevel = function (world: Pick<GameWorld, 'spawn' | 'spawnChild
 		...createAABBCollider(PLAYER.width, PLAYER.height),
 		...layers.player(),
 	}, scope);
-	const attack = world.spawnChild(player.id, { fixtureAttack: true, ...createCombatVolume(player.id, 'attack', ATTACK.width, ATTACK.height, ATTACK.offset, 0, false) });
+	const attack = world.spawnChild(player.id, { fixtureAttack: true, combatRectangle: { width: ATTACK.width, height: ATTACK.height, aim: { x: 1, y: 0 } }, ...createCombatVolume(player.id, 'attack', ATTACK.width, ATTACK.height, ATTACK.offset, 0, false) });
 	const enemies = (screen === 'gameplay' ? [] : [540, 300, 710]).map(function (x) {
 		const enemy = world.spawn({ enemy: true, hitReaction: { remaining: 0, push: 0 },
 			...createHealth(ENEMY.health),

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { createGameBuilder, spawnLevel, STEP, START, PLATFORM, ENEMY } from '../src/game';
+import { createGameBuilder, spawnLevel, STEP, START, PLATFORM, ENEMY, ATTACK } from '../src/game';
 import { inMeleeCone, MELEE } from '../src/melee';
 
 const fixture = async function (gameplay = false) {
@@ -140,4 +140,62 @@ test('hit stun overrides pursuit, pushback respects platform edges, and chase re
 		expect(enemy.components.localTransform.x).toBeLessThanOrEqual(PLATFORM.x + PLATFORM.width / 2 - ENEMY.width / 2);
 		expect(enemy.components.localTransform.y).toBeCloseTo(PLATFORM.y - PLATFORM.height / 2 - ENEMY.height / 2);
 	} finally { await f.world.dispose(); }
+});
+
+
+test('diagonal strikes aim and hit above/below on both facings, lock aim, and reacquire next swing', async () => {
+	for (const facing of [-1, 1] as const) {
+		for (const dy of [-40, 40]) {
+			const f = await fixture();
+			try {
+				const target = f.level.enemies[0];
+				if (!target) throw new Error('Missing target');
+				for (const { enemy } of f.level.enemies.slice(1)) f.world.removeEntity(enemy.id);
+				const { player, melee, localTransform: position, velocity } = f.level.player.components;
+				position.y = 200;
+				player.facing = facing;
+				f.world.mutateComponent(target.enemy.id, 'localTransform', function (p) { p.x = START.x + facing * 70; p.y = 200 + dy; });
+				f.attack(true); f.step(); f.attack(false);
+				const aim = { ...melee.aim };
+				expect(aim.x).toBeCloseTo(facing * 70 / Math.hypot(70, dy));
+				expect(aim.y).toBeCloseTo(dy / Math.hypot(70, dy));
+				expect(Math.sign(velocity.x)).toBe(facing);
+				expect(Math.sign(velocity.y)).toBe(Math.sign(dy));
+				expect(f.level.attack.components.localTransform.x).toBeCloseTo(aim.x * ATTACK.offset);
+				expect(f.level.attack.components.localTransform.y).toBeCloseTo(aim.y * ATTACK.offset);
+				f.step(6);
+				expect(target.enemy.components.health.current).toBe(ENEMY.health - 1);
+				expect(melee.aim).toEqual(aim);
+				// Reposition during recovery: the next swing must take a new bearing.
+				f.step(2);
+				f.world.mutateComponent(target.enemy.id, 'localTransform', function (p) { p.x = position.x + facing * 70; p.y = position.y - dy; });
+				f.attack(true); f.step(10); f.attack(false);
+				expect(melee.strike).toBe(2);
+				expect(Math.sign(melee.aim.y)).toBe(-Math.sign(dy));
+			} finally { await f.world.dispose(); }
+		}
+	}
+});
+
+test('rear, steep, distant and disabled targets leave an airborne attack horizontal without cancelling momentum', async () => {
+	for (const scenario of ['behind', 'steep', 'far', 'disabled'] as const) {
+		const f = await fixture();
+		try {
+			const target = f.level.enemies[0];
+			if (!target) throw new Error('Missing target');
+			for (const { enemy } of f.level.enemies.slice(1)) f.world.removeEntity(enemy.id);
+			const { localTransform: position, velocity, melee } = f.level.player.components;
+			position.y = 200;
+			velocity.y = -200;
+			f.world.mutateComponent(target.enemy.id, 'localTransform', function (p) {
+				p.x = position.x + (scenario === 'behind' ? -50 : scenario === 'far' ? 120 : 50);
+				p.y = position.y + (scenario === 'steep' ? -100 : -25);
+			});
+			if (scenario === 'disabled') target.hurtbox.components.combatVolume.active = false;
+			f.attack(true); f.step();
+			expect(melee.aim).toEqual({ x: 1, y: 0 });
+			expect(velocity.y).toBeCloseTo(-200 + 1400 * STEP);
+			expect(f.level.attack.components.localTransform.y).toBe(0);
+		} finally { await f.world.dispose(); }
+	}
 });
