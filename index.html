@@ -8,57 +8,67 @@
 	</head>
 	<body>
 		<main>
-			<header><h1>Power Up</h1><p>Combat, projectile and beam tests.</p></header>
-			<div id="game" role="img" aria-label="Platformer: cyan player on an amber platform. Rose enemies are stationary test targets. Move, jump, and hold J to test attack contact."></div>
+			<header><h1>Power Up</h1><p id="screen-description">Ground enemy gameplay sandbox.</p></header>
+			<nav class="screen-controls" aria-label="Screens">
+				<button id="show-gameplay" type="button" aria-pressed="true">Gameplay</button>
+				<button id="show-test" type="button" aria-pressed="false">Test screen</button>
+			</nav>
+			<section id="gameplay-controls" aria-label="Gameplay sandbox">
+				<p id="gameplay-status" role="status">Ground enemies: 0 / 8</p>
+				<button id="restart-gameplay" type="button">Restart sandbox</button>
+			</section>
+			<div id="game" role="img" aria-label="Gameplay sandbox: cyan player on an amber platform. Rose ground enemies spawn and chase the player. Move, jump and hold J to test contact."></div>
 			<footer>
 				<p><strong>Move</strong> A / D or ← / → <span>·</span> <strong>Jump</strong> Space <span>·</span> <strong>Attack</strong> Hold J</p>
 				<p>Gamepad: left stick or D-pad <span>·</span> primary face button to jump <span>·</span> button 2 to attack</p>
-				<p class="hint">Fall off? You’ll return to the platform.</p>
-				<section id="combat-review" aria-label="Combat overlap fixture">
-					<label><input id="combat-outlines" type="checkbox" checked /> Show combat outlines</label>
-					<p id="combat-status" role="status"></p>
-					<p class="hint">Rose enemies are stationary targets. Gold means contact. No damage or body blocking.</p>
-				</section>
-				<section id="projectile-review" aria-label="Fast projectile fixture">
-					<p>Projectile review · two thin rose targets, then an amber solid, above the player.</p>
-					<div class="projectile-controls">
-						<label>Speed (units/s) <input id="projectile-speed" type="number" min="1" max="60000" step="1" value="24000" required /></label>
-						<label>Lifetime (seconds) <input id="projectile-lifetime" type="number" min="0.01" max="10" step="0.01" value="0.35" required /></label>
-						<label><input id="projectile-miss" type="checkbox" /> Near miss</label>
-						<button id="projectile-launch" type="button">Launch projectile</button>
-						<button id="projectile-clear" type="button">Clear projectile</button>
-					</div>
-					<p id="projectile-status" role="status"></p>
-					<p id="projectile-history">Last run: launch to inspect ordered contacts.</p>
-					<p class="hint">Pass-through detection fixture; no damage or impact response. Off-screen shots expire by lifetime. Pan right to follow.</p>
-				</section>
-				<section id="beam-review" aria-label="Sustained beam fixture">
-					<p>Beam review · thin rose targets on both sides of an amber solid.</p>
-					<div class="projectile-controls">
-						<label><input id="beam-active" type="checkbox" /> Beam active</label>
-						<label>Start X <input id="beam-x" type="number" min="-10000" max="10000" value="240" required /></label>
-						<label>Start Y <input id="beam-y" type="number" min="-10000" max="10000" value="110" required /></label>
-						<label>Angle (degrees) <input id="beam-angle" type="number" min="-180" max="180" value="0" required /></label>
-						<label>Length <input id="beam-length" type="number" min="1" max="5000" value="600" required /></label>
-						<label>Width <input id="beam-width" type="number" min="1" max="200" value="12" required /></label>
-						<button id="beam-remove" type="button">Remove beam</button>
-					</div>
-					<p id="beam-status" role="status"></p>
-					<p id="beam-contacts">No active contacts.</p>
-					<p class="hint">Live geometry; flat ends. Targets turn gold during coverage. Reports through solids every active tick. Pan to inspect alignment. Enable again after removal to recreate.</p>
-				</section>
-				<section id="camera-review" aria-label="Temporary camera review controls">
-					<p>Camera review · Pan the view to find the violet marker at world 1120, 270.</p>
-					<div class="pan-controls">
-						<button type="button" data-pan="left">Pan left</button>
-						<button type="button" data-pan="right">Pan right</button>
-						<button type="button" data-pan="up">Pan up</button>
-						<button type="button" data-pan="down">Pan down</button>
-						<button type="button" data-pan="reset">Reset view</button>
-					</div>
-					<p id="camera-status"></p>
-					<p id="coordinate-status">Point at the canvas to inspect world coordinates.</p>
-				</section>
+				<p id="play-hint" class="hint">Ground enemies chase along the platform. Move and jump to evade. No damage yet; bodies do not block each other. Fall off to return to the platform.</p>
+				<div id="test-controls" hidden>
+					<section id="combat-review" aria-label="Combat overlap fixture">
+						<label><input id="combat-outlines" type="checkbox" checked /> Show combat outlines</label>
+						<p id="combat-status" role="status"></p>
+						<p class="hint">Rose enemies are stationary targets. Gold means contact. No damage or body blocking.</p>
+					</section>
+					<section id="projectile-review" aria-label="Fast projectile fixture">
+						<p>Projectile review · two thin rose targets, then an amber solid, above the player.</p>
+						<div class="projectile-controls">
+							<label>Speed (units/s) <input id="projectile-speed" type="number" min="1" max="60000" step="1" value="24000" required /></label>
+							<label>Lifetime (seconds) <input id="projectile-lifetime" type="number" min="0.01" max="10" step="0.01" value="0.35" required /></label>
+							<label><input id="projectile-miss" type="checkbox" /> Near miss</label>
+							<button id="projectile-launch" type="button">Launch projectile</button>
+							<button id="projectile-clear" type="button">Clear projectile</button>
+						</div>
+						<p id="projectile-status" role="status"></p>
+						<p id="projectile-history">Last run: launch to inspect ordered contacts.</p>
+						<p class="hint">Pass-through detection fixture; no damage or impact response. Off-screen shots expire by lifetime. Pan right to follow.</p>
+					</section>
+					<section id="beam-review" aria-label="Sustained beam fixture">
+						<p>Beam review · thin rose targets on both sides of an amber solid.</p>
+						<div class="projectile-controls">
+							<label><input id="beam-active" type="checkbox" /> Beam active</label>
+							<label>Start X <input id="beam-x" type="number" min="-10000" max="10000" value="240" required /></label>
+							<label>Start Y <input id="beam-y" type="number" min="-10000" max="10000" value="110" required /></label>
+							<label>Angle (degrees) <input id="beam-angle" type="number" min="-180" max="180" value="0" required /></label>
+							<label>Length <input id="beam-length" type="number" min="1" max="5000" value="600" required /></label>
+							<label>Width <input id="beam-width" type="number" min="1" max="200" value="12" required /></label>
+							<button id="beam-remove" type="button">Remove beam</button>
+						</div>
+						<p id="beam-status" role="status"></p>
+						<p id="beam-contacts">No active contacts.</p>
+						<p class="hint">Live geometry; flat ends. Targets turn gold during coverage. Reports through solids every active tick. Pan to inspect alignment. Enable again after removal to recreate.</p>
+					</section>
+					<section id="camera-review" aria-label="Temporary camera review controls">
+						<p>Camera review · Pan the view to find the violet marker at world 1120, 270.</p>
+						<div class="pan-controls">
+							<button type="button" data-pan="left">Pan left</button>
+							<button type="button" data-pan="right">Pan right</button>
+							<button type="button" data-pan="up">Pan up</button>
+							<button type="button" data-pan="down">Pan down</button>
+							<button type="button" data-pan="reset">Reset view</button>
+						</div>
+						<p id="camera-status"></p>
+						<p id="coordinate-status">Point at the canvas to inspect world coordinates.</p>
+					</section>
+				</div>
 			</footer>
 			<p id="error" role="alert" hidden></p>
 		</main>

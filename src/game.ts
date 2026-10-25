@@ -16,9 +16,11 @@ export const PLAYER = { width: 32, height: 44, speed: 260, jumpSpeed: 520 } as c
 export const START = { x: 480, y: PLATFORM.y - PLATFORM.height / 2 - PLAYER.height / 2 } as const;
 
 export const ENEMY = { width: 30, height: 40 } as const;
+export const GROUND_ENEMY = { speed: 90, spawnInterval: 2, limit: 8 } as const;
 export const ATTACK = { width: 56, height: 36, offset: 40 } as const;
 
 type Action = 'left' | 'right' | 'jump' | 'attack';
+const groundSpawn = defineSystemRef('gameplay.ground-spawn');
 const fallReset = defineSystemRef('game.fall-reset');
 const playerControl = defineSystemRef('game.player-control');
 const pads = [0, 1, 2, 3];
@@ -26,6 +28,10 @@ const pads = [0, 1, 2, 3];
 const createBaseBuilder = function (input: Pick<InputPluginOptions<Action>, 'target' | 'gamepad'> = {}) {
 	return ECSpresso.create()
 		.withFixedTimestep(STEP)
+		.withScreens(function (screens) {
+			return screens.add('test', { initialState: function () { return {}; } })
+				.add('gameplay', { initialState: function () { return {}; } });
+		})
 		.withPlugin(createTransformPlugin({ phase: 'fixedUpdate', after: [fallReset] }))
 		.withPlugin(createPhysics2DPlugin({
 			gravity: { x: 0, y: 1400 }, layers,
@@ -54,8 +60,54 @@ type BaseWorld = ReturnType<ReturnType<typeof createBaseBuilder>['build']>;
 
 const gameplay = definePlugin('gameplay')
 	.requires<ConfigOf<BaseWorld>>()
-	.withComponentTypes<{ player: { grounded: boolean; facing: -1 | 1 }; platform: true; enemy: true; fixtureAttack: true }>()
-	.install(function (systems) {
+	.withComponentTypes<{ player: { grounded: boolean; facing: -1 | 1 }; platform: true; enemy: true; groundChaser: true; fixtureAttack: true }>()
+	.withResourceTypes<{ groundSpawns: { remaining: number; spawned: number } }>()
+	.install(function (systems, onCleanup) {
+		onCleanup(systems.onScreenEnter('gameplay', function ({ ecs }) {
+			const spawns = ecs.getResource('groundSpawns');
+			spawns.remaining = 0;
+			spawns.spawned = 0;
+		}));
+		systems.addResource('groundSpawns', { remaining: 0, spawned: 0 });
+		systems.addSystem('ground-spawn').withRef(groundSpawn)
+			.inScreens(['gameplay']).inPhase('fixedUpdate').before(physics2DSystems.integrate)
+			.withResources(['groundSpawns'])
+			.addQuery('enemies', { with: ['groundChaser'] })
+			.runWhenEmpty()
+			.setProcess(function ({ ecs, dt, resources: { groundSpawns }, queries }) {
+				groundSpawns.remaining -= dt;
+				if (groundSpawns.remaining > 1e-9) return;
+				groundSpawns.remaining = GROUND_ENEMY.spawnInterval;
+				if (queries.enemies.length >= GROUND_ENEMY.limit) return;
+				const x = PLATFORM.x + (groundSpawns.spawned % 2 === 0 ? -1 : 1) * (PLATFORM.width / 2 - ENEMY.width);
+				// Immediate visibility lets the child hurtbox and this tick's physics share the new owner.
+				const enemy = ecs.spawn({
+					enemy: true, groundChaser: true,
+					...createTransform(x, PLATFORM.y - PLATFORM.height / 2 - ENEMY.height / 2),
+					...createRigidBody('dynamic', { restitution: 0, friction: 0 }),
+					velocity: { x: 0, y: 0 },
+					...createAABBCollider(ENEMY.width, ENEMY.height), ...layers.groundEnemy(),
+				});
+				ecs.spawnChild(enemy.id, createCombatVolume(enemy.id, 'hurtbox', ENEMY.width, ENEMY.height));
+				groundSpawns.spawned++;
+			});
+
+		systems.addSystem('ground-chase')
+			.inScreens(['gameplay']).inPhase('fixedUpdate').after(groundSpawn).before(physics2DSystems.integrate)
+			.addSingleton('target', { with: ['player', 'localTransform'] })
+			.addQuery('enemies', { with: ['groundChaser', 'localTransform', 'velocity'], mutates: ['velocity'] })
+			.setProcess(function ({ queries, dt }) {
+				const target = queries.target;
+				if (!target) return;
+				const left = PLATFORM.x - PLATFORM.width / 2 + ENEMY.width / 2;
+				const right = PLATFORM.x + PLATFORM.width / 2 - ENEMY.width / 2;
+				for (const { components: { localTransform, velocity } } of queries.enemies) {
+					const distance = target.components.localTransform.x - localTransform.x;
+					const travel = Math.sign(distance) * Math.min(GROUND_ENEMY.speed * dt, Math.max(0, Math.abs(distance) - (PLAYER.width + ENEMY.width) / 2));
+					velocity.x = (Math.max(left, Math.min(right, localTransform.x + travel)) - localTransform.x) / dt;
+				}
+			});
+
 		systems.addSystem('player-control').withRef(playerControl)
 			.inPhase('fixedUpdate').after(inputSystems.update).before(physics2DSystems.integrate)
 			.withResources(['inputState'])
@@ -125,14 +177,15 @@ export const createGameBuilder = function (input: Pick<InputPluginOptions<Action
 
 export type GameWorld = ReturnType<ReturnType<typeof createGameBuilder>['build']>;
 
-export const spawnLevel = function (world: Pick<GameWorld, 'spawn' | 'spawnChild'>) {
+export const spawnLevel = function (world: Pick<GameWorld, 'spawn' | 'spawnChild'>, screen?: 'test' | 'gameplay') {
+	const scope = { scope: screen ?? null };
 	const platform = world.spawn({
 		platform: true,
 		...createTransform(PLATFORM.x, PLATFORM.y),
 		...createRigidBody('static'),
 		...createAABBCollider(PLATFORM.width, PLATFORM.height),
 		...layers.platform(),
-	});
+	}, scope);
 	const player = world.spawn({
 		player: { grounded: true, facing: 1 },
 		...createTransform(START.x, START.y),
@@ -140,10 +193,10 @@ export const spawnLevel = function (world: Pick<GameWorld, 'spawn' | 'spawnChild
 		velocity: { x: 0, y: 0 },
 		...createAABBCollider(PLAYER.width, PLAYER.height),
 		...layers.player(),
-	});
+	}, scope);
 	const attack = world.spawnChild(player.id, { fixtureAttack: true, ...createCombatVolume(player.id, 'attack', ATTACK.width, ATTACK.height, ATTACK.offset, 0, false) });
-	const enemies = [540, 300, 710].map(function (x) {
-		const enemy = world.spawn({ enemy: true, ...createTransform(x, PLATFORM.y - PLATFORM.height / 2 - ENEMY.height / 2) });
+	const enemies = (screen === 'gameplay' ? [] : [540, 300, 710]).map(function (x) {
+		const enemy = world.spawn({ enemy: true, ...createTransform(x, PLATFORM.y - PLATFORM.height / 2 - ENEMY.height / 2) }, scope);
 		const hurtbox = world.spawnChild(enemy.id, createCombatVolume(enemy.id, 'hurtbox', ENEMY.width, ENEMY.height));
 		return { enemy, hurtbox };
 	});
