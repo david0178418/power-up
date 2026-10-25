@@ -3,6 +3,7 @@ import { createInputPlugin, inputSystems, type InputPluginOptions } from 'ecspre
 import { createPhysics2DPlugin, createRigidBody, physics2DSystems } from 'ecspresso/plugins/physics/physics2D';
 import { createAABBCollider, createCollisionPlugin } from 'ecspresso/plugins/physics/collision';
 import { createTransform, createTransformPlugin, transformSystems } from 'ecspresso/plugins/spatial/transform';
+import { createHealth, createHealthPlugin } from 'ecspresso/plugins/combat/health';
 
 import { combat, createCombatVolume, layers } from './combat';
 import { projectiles } from './projectile';
@@ -17,7 +18,7 @@ export const PLATFORM = { x: 480, y: 410, width: 640, height: 32 } as const;
 export const PLAYER = { width: 32, height: 44, speed: 260, jumpSpeed: 520 } as const;
 export const START = { x: 480, y: PLATFORM.y - PLATFORM.height / 2 - PLAYER.height / 2 } as const;
 
-export const ENEMY = { width: 30, height: 40 } as const;
+export const ENEMY = { width: 30, height: 40, health: 3 } as const;
 export const GROUND_ENEMY = { speed: 90, spawnInterval: 2, limit: 8 } as const;
 export const ATTACK = { width: 56, height: 36, offset: 40 } as const;
 
@@ -46,6 +47,7 @@ const createBaseBuilder = function (input: Pick<InputPluginOptions<Action>, 'tar
 		.withPlugin(combat)
 		.withPlugin(projectiles)
 		.withPlugin(beams)
+		.withPlugin(createHealthPlugin())
 		.withPlugin(createInputPlugin<Action>({
 			...input,
 			// Sample edges once per simulation tick: no lost edges on zero-step frames,
@@ -93,6 +95,7 @@ const gameplay = definePlugin('gameplay')
 				// Immediate visibility lets the child hurtbox and this tick's physics share the new owner.
 				const enemy = ecs.spawn({
 					enemy: true, groundChaser: true, hitReaction: { remaining: 0, push: 0 },
+					...createHealth(ENEMY.health),
 					...createTransform(x, PLATFORM.y - PLATFORM.height / 2 - ENEMY.height / 2),
 					...createRigidBody('dynamic', { restitution: 0, friction: 0 }),
 					velocity: { x: 0, y: 0 },
@@ -257,12 +260,28 @@ const gameplay = definePlugin('gameplay')
 			combatContact({ data, ecs }) {
 				if (!ecs.getComponent(data.attackId, 'fixtureAttack') || !ecs.getComponent(data.targetId, 'enemy')) return;
 				const melee = ecs.getComponent(data.ownerId, 'melee');
+				const health = ecs.getComponent(data.targetId, 'health');
+				if (!health || health.current <= 0) return;
 				if (!melee?.active || melee.hitTargets.has(data.targetId) || !ecs.getComponent(data.targetId, 'hitReaction')) return;
 				ecs.mutateComponent(data.ownerId, 'melee', function (state) { state.hitTargets.add(data.targetId); });
 				ecs.mutateComponent(data.targetId, 'hitReaction', function (reaction) {
 					reaction.remaining = melee.strike === 3 ? MELEE.finisherStun : MELEE.stun;
 					reaction.push = melee.direction * (melee.strike === 3 ? MELEE.finisherPushSpeed : MELEE.pushSpeed);
 				});
+				ecs.eventBus.publish('damage', { entityId: data.targetId, amount: 1, sourceId: data.ownerId });
+			},
+		});
+
+		systems.addSystem('enemy-death').setEventHandlers({
+			entityDied({ data, ecs }) {
+				if (!ecs.getComponent(data.entityId, 'enemy')) return;
+				// Disable immediately: other contacts in this phase must not hit a dead owner.
+				for (const volume of ecs.getEntitiesWithQuery(['combatVolume'])) {
+					if (volume.components.combatVolume.ownerId !== data.entityId) continue;
+					ecs.mutateComponent(volume.id, 'combatVolume', function (state) { state.active = false; });
+				}
+				// Removing the owner also removes child hurtboxes at the phase boundary.
+				ecs.commands.removeEntity(data.entityId);
 			},
 		});
 
@@ -321,6 +340,7 @@ export const spawnLevel = function (world: Pick<GameWorld, 'spawn' | 'spawnChild
 	const attack = world.spawnChild(player.id, { fixtureAttack: true, ...createCombatVolume(player.id, 'attack', ATTACK.width, ATTACK.height, ATTACK.offset, 0, false) });
 	const enemies = (screen === 'gameplay' ? [] : [540, 300, 710]).map(function (x) {
 		const enemy = world.spawn({ enemy: true, hitReaction: { remaining: 0, push: 0 },
+			...createHealth(ENEMY.health),
 			...createTransform(x, PLATFORM.y - PLATFORM.height / 2 - ENEMY.height / 2),
 			...createRigidBody('dynamic', { restitution: 0, friction: 0 }), velocity: { x: 0, y: 0 },
 			...createAABBCollider(ENEMY.width, ENEMY.height), ...layers.groundEnemy() }, scope);

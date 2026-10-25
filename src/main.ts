@@ -80,7 +80,7 @@ const start = async function (container: HTMLElement) {
 		testButton.setAttribute('aria-pressed', String(screen === 'test'));
 		description.textContent = screen === 'gameplay' ? 'Ground enemy gameplay sandbox.' : 'Combat, projectile and beam tests.';
 		hint.textContent = screen === 'gameplay'
-			? 'Tap or hold Attack for a three-hit combo. Each strike lunges toward nearby enemies ahead, stunning and pushing every enemy hit. Fall off to return to the platform.'
+			? 'Tap or hold Attack for a three-hit combo. Each strike lunges toward nearby enemies ahead, dealing one damage and stunning and pushing every enemy hit. Enemies die after three hits; bars show remaining health. Fall off to return to the platform.'
 			: 'Fall off? You’ll return to the platform.';
 		container.setAttribute('aria-label', screen === 'gameplay'
 			? 'Gameplay sandbox: cyan player on an amber platform. Rose ground enemies spawn and chase the player. Move, jump and tap or hold J for melee combos.'
