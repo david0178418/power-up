@@ -159,7 +159,11 @@ const gameplay = definePlugin('gameplay')
 					melee.remaining = Math.max(0, melee.remaining - dt);
 					if (melee.active && melee.remaining <= 1e-9) {
 						melee.active = false;
-						if (melee.lunge > 0) melee.gravityTail = MELEE.gravityTail;
+						if (melee.lunge > 0) {
+							velocity.x = 0;
+							velocity.y = 0;
+							melee.gravityTail = MELEE.gravityTail;
+						}
 						melee.remaining = melee.strike === 3 ? MELEE.finisherRecovery : MELEE.recovery;
 					}
 					if (!melee.active && melee.remaining <= 1e-9) {
