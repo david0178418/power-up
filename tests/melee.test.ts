@@ -93,24 +93,28 @@ test('magnetism changes lunge only for a live target in the forward cone and rea
 	}
 });
 
-test('one swing stuns and pushes every overlapping enemy once; finisher is stronger', async () => {
+test('one swing stuns and pushes multiple solid enemies once; finisher is stronger', async () => {
 	for (const strike of [1, 3]) {
 		const f = await fixture();
 		try {
-			for (const { enemy } of f.level.enemies) f.world.mutateComponent(enemy.id, 'localTransform', function (p) { p.x = START.x + 50; });
+			const targets = f.level.enemies.slice(0, 2);
+			for (const { enemy } of f.level.enemies.slice(2)) f.world.removeEntity(enemy.id);
+			for (const [index, { enemy }] of targets.entries()) {
+				f.world.mutateComponent(enemy.id, 'localTransform', function (p) { p.x = START.x + 35 + index * ENEMY.width; });
+			}
 			f.level.player.components.melee.strike = strike - 1;
 			f.attack(true); f.step(); f.attack(false);
-			for (const { enemy } of f.level.enemies) {
+			for (const { enemy } of targets) {
 				expect(enemy.components.hitReaction.remaining).toBe(strike === 3 ? MELEE.finisherStun : MELEE.stun);
 				expect(enemy.components.hitReaction.push).toBe(strike === 3 ? MELEE.finisherPushSpeed : MELEE.pushSpeed);
 			}
 			f.step(3);
-			for (const { enemy } of f.level.enemies) {
-				expect(enemy.components.localTransform.x).toBeGreaterThan(START.x + 50);
+			for (const [index, { enemy }] of targets.entries()) {
+				expect(enemy.components.localTransform.x).toBeGreaterThan(START.x + 35 + index * ENEMY.width);
 				expect(enemy.components.hitReaction.remaining).toBeLessThan(strike === 3 ? MELEE.finisherStun : MELEE.stun);
 			}
 			f.step(45);
-			for (const { enemy } of f.level.enemies) {
+			for (const { enemy } of targets) {
 				expect(enemy.components.hitReaction.remaining).toBe(0);
 				expect(enemy.components.velocity.x).toBe(0);
 			}
