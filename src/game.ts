@@ -8,6 +8,7 @@ import { combat, createCombatVolume, layers } from './combat';
 import { projectiles } from './projectile';
 import { beams } from './beam';
 import { createTouchInput } from './touch-input';
+import { createMeleeState, inMeleeCone, MELEE, type MeleeState, type HitReaction } from './melee';
 
 // Simulation bounds are independent of the renderer's logical viewport.
 export const LEVEL_BOUNDS = { left: 0, top: 0, right: 960, bottom: 540 } as const;
@@ -24,6 +25,8 @@ type Action = 'left' | 'right' | 'jump' | 'attack';
 const groundSpawn = defineSystemRef('gameplay.ground-spawn');
 const fallReset = defineSystemRef('game.fall-reset');
 const playerControl = defineSystemRef('game.player-control');
+const meleeControl = defineSystemRef('game.melee-control');
+const enemyReaction = defineSystemRef('game.enemy-reaction');
 const pads = [0, 1, 2, 3];
 
 const createBaseBuilder = function (input: Pick<InputPluginOptions<Action>, 'target' | 'gamepad'> = {}) {
@@ -62,7 +65,7 @@ type BaseWorld = ReturnType<ReturnType<typeof createBaseBuilder>['build']>;
 
 const gameplay = definePlugin('gameplay')
 	.requires<ConfigOf<BaseWorld>>()
-	.withComponentTypes<{ player: { grounded: boolean; facing: -1 | 1 }; platform: true; enemy: true; groundChaser: true; fixtureAttack: true }>()
+	.withComponentTypes<{ player: { grounded: boolean; facing: -1 | 1 }; platform: true; enemy: true; groundChaser: true; fixtureAttack: true; melee: MeleeState; hitReaction: HitReaction }>()
 	.withResourceTypes<{ groundSpawns: { remaining: number; spawned: number } }>()
 	.install(function (systems, onCleanup) {
 		let jumpHeld = false;
@@ -85,7 +88,7 @@ const gameplay = definePlugin('gameplay')
 				const x = PLATFORM.x + (groundSpawns.spawned % 2 === 0 ? -1 : 1) * (PLATFORM.width / 2 - ENEMY.width);
 				// Immediate visibility lets the child hurtbox and this tick's physics share the new owner.
 				const enemy = ecs.spawn({
-					enemy: true, groundChaser: true,
+					enemy: true, groundChaser: true, hitReaction: { remaining: 0, push: 0 },
 					...createTransform(x, PLATFORM.y - PLATFORM.height / 2 - ENEMY.height / 2),
 					...createRigidBody('dynamic', { restitution: 0, friction: 0 }),
 					velocity: { x: 0, y: 0 },
@@ -96,15 +99,16 @@ const gameplay = definePlugin('gameplay')
 			});
 
 		systems.addSystem('ground-chase')
-			.inScreens(['gameplay']).inPhase('fixedUpdate').after(groundSpawn).before(physics2DSystems.integrate)
+			.inScreens(['gameplay']).inPhase('fixedUpdate').after(groundSpawn).before(enemyReaction).before(physics2DSystems.integrate)
 			.addSingleton('target', { with: ['player', 'localTransform'] })
 			.addQuery('enemies', { with: ['groundChaser', 'localTransform', 'velocity'], mutates: ['velocity'] })
-			.setProcess(function ({ queries, dt }) {
+			.setProcess(function ({ queries, dt, ecs }) {
 				const target = queries.target;
 				if (!target) return;
 				const left = PLATFORM.x - PLATFORM.width / 2 + ENEMY.width / 2;
 				const right = PLATFORM.x + PLATFORM.width / 2 - ENEMY.width / 2;
-				for (const { components: { localTransform, velocity } } of queries.enemies) {
+				for (const { id, components: { localTransform, velocity } } of queries.enemies) {
+					if ((ecs.getComponent(id, 'hitReaction')?.remaining ?? 0) > 0) continue;
 					const distance = target.components.localTransform.x - localTransform.x;
 					const travel = Math.sign(distance) * Math.min(GROUND_ENEMY.speed * dt, Math.max(0, Math.abs(distance) - (PLAYER.width + ENEMY.width) / 2));
 					velocity.x = (Math.max(left, Math.min(right, localTransform.x + travel)) - localTransform.x) / dt;
@@ -133,20 +137,101 @@ const gameplay = definePlugin('gameplay')
 				},
 			);
 
-		systems.addSystem('fixture-attack')
-			.inPhase('fixedUpdate').after(playerControl).before(transformSystems.propagate)
+		systems.addSystem('melee-control').withRef(meleeControl)
+			.inPhase('fixedUpdate').after(playerControl).before(physics2DSystems.integrate)
 			.withResources(['inputState', 'touchInput'])
+			.addQuery('targets', { with: ['enemy', 'localTransform'] })
+			.addQuery('hurtboxes', { with: ['combatVolume'] })
+			.addQuery('players', { with: ['player', 'melee', 'velocity', 'localTransform'], mutates: ['player', 'melee', 'velocity'] })
+			.setProcess(function ({ queries, dt, resources: { inputState, touchInput } }) {
+				const held = inputState.actions.isActive('attack') || touchInput.attack;
+				for (const { components: { melee, player, velocity, localTransform: position } } of queries.players) {
+					if (held && !melee.held) melee.queued = true;
+					melee.held = held;
+					melee.remaining = Math.max(0, melee.remaining - dt);
+					if (melee.active && melee.remaining <= 1e-9) {
+						melee.active = false;
+						melee.remaining = melee.strike === 3 ? MELEE.finisherRecovery : MELEE.recovery;
+					}
+					if (!melee.active && melee.remaining <= 1e-9) {
+						melee.idle += dt;
+						if (melee.idle >= MELEE.reset) melee.strike = 0;
+						if (held || melee.queued) {
+							melee.strike = melee.strike % 3 + 1;
+							melee.active = true;
+							melee.remaining = MELEE.active;
+							melee.idle = 0;
+							melee.queued = false;
+							melee.direction = player.facing;
+							melee.hitTargets.clear();
+							// Assist only toward the nearest live hurtbox inside the forward cone.
+							const target = queries.targets.filter(function (candidate) {
+								const p = candidate.components.localTransform;
+								return inMeleeCone(p.x - position.x, p.y - position.y, player.facing)
+									&& queries.hurtboxes.some(function (volume) {
+										return volume.components.combatVolume.ownerId === candidate.id
+											&& volume.components.combatVolume.kind === 'hurtbox' && volume.components.combatVolume.active;
+									});
+							}).sort(function (a, b) {
+								const distance = function (p: { x: number; y: number }) { return Math.hypot(p.x - position.x, p.y - position.y); };
+								return distance(a.components.localTransform) - distance(b.components.localTransform) || a.id - b.id;
+							})[0];
+							const gap = target ? Math.max(0, (target.components.localTransform.x - position.x) * melee.direction - (PLAYER.width + ENEMY.width) / 2) : Infinity;
+							melee.lunge = Math.min(target ? MELEE.magnetismSpeed : MELEE.lungeSpeed, gap / MELEE.active);
+						}
+					}
+					if (melee.active) {
+						player.facing = melee.direction;
+						velocity.x = melee.direction * melee.lunge;
+					}
+				}
+			});
+
+		systems.addSystem('fixture-attack')
+			.inPhase('fixedUpdate').after(meleeControl).after(fallReset).before(transformSystems.propagate)
 			.setProcessEach(
 				{ with: ['fixtureAttack', 'combatVolume', 'localTransform'], mutates: ['combatVolume', 'localTransform'] },
-				function ({ entity, ecs, resources: { inputState, touchInput } }) {
+				function ({ entity, ecs }) {
 					const volume = entity.components.combatVolume;
-					const owner = ecs.getComponent(volume.ownerId, 'player');
-					if (volume.kind !== 'attack' || !owner) return false;
-					volume.active = inputState.actions.isActive('attack') || touchInput.attack;
-					entity.components.localTransform.x = owner.facing * ATTACK.offset;
+					const melee = ecs.getComponent(volume.ownerId, 'melee');
+					if (volume.kind !== 'attack' || !melee) return false;
+					volume.active = melee.active;
+					entity.components.localTransform.x = melee.direction * ATTACK.offset;
 					return true;
 				},
 			);
+
+		systems.addSystem('enemy-reaction').withRef(enemyReaction)
+			.inPhase('fixedUpdate').after(groundSpawn).before(physics2DSystems.integrate)
+			.setProcessEach(
+				{ with: ['enemy', 'hitReaction', 'localTransform', 'velocity'], mutates: ['hitReaction', 'velocity'] },
+				function ({ entity, dt }) {
+					const { hitReaction: reaction, velocity, localTransform: position } = entity.components;
+					if (reaction.remaining <= 0) {
+						if (!entity.components.groundChaser) velocity.x = 0;
+						return;
+					}
+					const left = PLATFORM.x - PLATFORM.width / 2 + ENEMY.width / 2;
+					const right = PLATFORM.x + PLATFORM.width / 2 - ENEMY.width / 2;
+					const travel = reaction.push * Math.min(dt, reaction.remaining);
+					velocity.x = (Math.max(left, Math.min(right, position.x + travel)) - position.x) / dt;
+					reaction.remaining = Math.max(0, reaction.remaining - dt);
+					reaction.push *= Math.exp(-12 * dt);
+				},
+			);
+
+		systems.addSystem('melee-hit').setEventHandlers({
+			combatContact({ data, ecs }) {
+				if (!ecs.getComponent(data.attackId, 'fixtureAttack') || !ecs.getComponent(data.targetId, 'enemy')) return;
+				const melee = ecs.getComponent(data.ownerId, 'melee');
+				if (!melee?.active || melee.hitTargets.has(data.targetId) || !ecs.getComponent(data.targetId, 'hitReaction')) return;
+				ecs.mutateComponent(data.ownerId, 'melee', function (state) { state.hitTargets.add(data.targetId); });
+				ecs.mutateComponent(data.targetId, 'hitReaction', function (reaction) {
+					reaction.remaining = melee.strike === 3 ? MELEE.finisherStun : MELEE.stun;
+					reaction.push = melee.direction * (melee.strike === 3 ? MELEE.finisherPushSpeed : MELEE.pushSpeed);
+				});
+			},
+		});
 
 		systems.addSystem('ground-contact').setEventHandlers({
 			physicsCollision({ data, ecs }) {
@@ -160,7 +245,7 @@ const gameplay = definePlugin('gameplay')
 		systems.addSystem('fall-reset').withRef(fallReset)
 			.inPhase('fixedUpdate').after(physics2DSystems.collide)
 			.setProcessEach(
-				{ with: ['player', 'localTransform', 'velocity', 'force'], mutates: ['player', 'localTransform', 'velocity', 'force'] },
+				{ with: ['player', 'melee', 'localTransform', 'velocity', 'force'], mutates: ['player', 'melee', 'localTransform', 'velocity', 'force'] },
 				({ entity }) => {
 					const { player, localTransform, velocity, force } = entity.components;
 					if (localTransform.y < LEVEL_BOUNDS.bottom + PLAYER.height) return false;
@@ -171,6 +256,7 @@ const gameplay = definePlugin('gameplay')
 					force.x = 0;
 					force.y = 0;
 					player.grounded = true;
+					Object.assign(entity.components.melee, createMeleeState());
 					return true;
 				},
 			);
@@ -192,7 +278,7 @@ export const spawnLevel = function (world: Pick<GameWorld, 'spawn' | 'spawnChild
 		...layers.platform(),
 	}, scope);
 	const player = world.spawn({
-		player: { grounded: true, facing: 1 },
+		player: { grounded: true, facing: 1 }, melee: createMeleeState(),
 		...createTransform(START.x, START.y),
 		...createRigidBody('dynamic', { restitution: 0, friction: 0 }),
 		velocity: { x: 0, y: 0 },
@@ -201,7 +287,10 @@ export const spawnLevel = function (world: Pick<GameWorld, 'spawn' | 'spawnChild
 	}, scope);
 	const attack = world.spawnChild(player.id, { fixtureAttack: true, ...createCombatVolume(player.id, 'attack', ATTACK.width, ATTACK.height, ATTACK.offset, 0, false) });
 	const enemies = (screen === 'gameplay' ? [] : [540, 300, 710]).map(function (x) {
-		const enemy = world.spawn({ enemy: true, ...createTransform(x, PLATFORM.y - PLATFORM.height / 2 - ENEMY.height / 2) }, scope);
+		const enemy = world.spawn({ enemy: true, hitReaction: { remaining: 0, push: 0 },
+			...createTransform(x, PLATFORM.y - PLATFORM.height / 2 - ENEMY.height / 2),
+			...createRigidBody('dynamic', { restitution: 0, friction: 0 }), velocity: { x: 0, y: 0 },
+			...createAABBCollider(ENEMY.width, ENEMY.height), ...layers.groundEnemy() }, scope);
 		const hurtbox = world.spawnChild(enemy.id, createCombatVolume(enemy.id, 'hurtbox', ENEMY.width, ENEMY.height));
 		return { enemy, hurtbox };
 	});
