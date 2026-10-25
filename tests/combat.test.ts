@@ -143,6 +143,7 @@ test('melee accepts keyboard/gamepad, locks swing facing and resets without lag'
 		world.update(STEP);
 		expect(level.attack.components.worldTransform.x).toBe(level.player.components.localTransform.x + level.player.components.melee.aim.x * 40);
 		key('keyup', 'a');
+		while (world.getResource('hitStop').remaining > 1e-9) world.update(STEP);
 		world.mutateComponent(level.player.id, 'localTransform', function (t) { t.y = 700; });
 		world.update(STEP);
 		expect(level.player.components.localTransform).toMatchObject(START);

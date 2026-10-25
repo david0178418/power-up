@@ -8,7 +8,13 @@ const fixture = async function (gameplay = false) {
 	await world.initialize();
 	if (gameplay) await world.setScreen('gameplay', {});
 	const level = spawnLevel(world, gameplay ? 'gameplay' : undefined);
-	const step = function (count = 1) { for (let i = 0; i < count; i++) world.update(STEP); };
+	// These mechanic tests count active simulation ticks; hit-stop timing has separate coverage.
+	const step = function (count = 1) {
+		for (let i = 0; i < count; i++) {
+			while (world.getResource('hitStop').remaining > 1e-9) world.update(STEP);
+			world.update(STEP);
+		}
+	};
 	const attack = function (pressed: boolean) {
 		const event = new Event(pressed ? 'keydown' : 'keyup');
 		Object.defineProperty(event, 'key', { value: 'j' });
