@@ -50,4 +50,3 @@ export const beamOverlap = function (beam: Readonly<Beam>, box: Box): number | u
 	}
 	return polygon.length ? Math.max(0, Math.min(...polygon.map(function (p) { return p.x; })) / length) : undefined;
 };
-
