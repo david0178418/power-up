@@ -146,18 +146,20 @@ const gameplay = definePlugin('gameplay')
 
 		systems.addSystem('melee-control').withRef(meleeControl)
 			.inPhase('fixedUpdate').after(playerControl).before(physics2DSystems.integrate)
-			.withResources(['inputState', 'touchInput'])
+			.withResources(['inputState', 'touchInput', 'physicsConfig'])
 			.addQuery('targets', { with: ['enemy', 'localTransform'] })
 			.addQuery('hurtboxes', { with: ['combatVolume'] })
-			.addQuery('players', { with: ['player', 'melee', 'velocity', 'localTransform'], mutates: ['player', 'melee', 'velocity'] })
-			.setProcess(function ({ queries, dt, resources: { inputState, touchInput } }) {
+			.addQuery('players', { with: ['player', 'melee', 'velocity', 'localTransform', 'force', 'rigidBody'], mutates: ['player', 'melee', 'velocity', 'force'] })
+			.setProcess(function ({ queries, dt, resources: { inputState, touchInput, physicsConfig } }) {
 				const held = inputState.actions.isActive('attack') || touchInput.attack;
-				for (const { components: { melee, player, velocity, localTransform: position } } of queries.players) {
+				for (const { components: { melee, player, velocity, localTransform: position, force, rigidBody } } of queries.players) {
 					if (held && !melee.held) melee.queued = true;
 					melee.held = held;
+					melee.gravityTail = Math.max(0, melee.gravityTail - dt);
 					melee.remaining = Math.max(0, melee.remaining - dt);
 					if (melee.active && melee.remaining <= 1e-9) {
 						melee.active = false;
+						melee.gravityTail = MELEE.gravityTail;
 						melee.remaining = melee.strike === 3 ? MELEE.finisherRecovery : MELEE.recovery;
 					}
 					if (!melee.active && melee.remaining <= 1e-9) {
@@ -198,6 +200,11 @@ const gameplay = definePlugin('gameplay')
 							// Add vertical assistance once so attacks preserve jump/fall momentum.
 							velocity.y += melee.aim.y * melee.lunge;
 						}
+					}
+					// Counter gravity only; preserve momentum, other forces, and collision response.
+					if (melee.active || melee.gravityTail > 1e-9) {
+						force.x -= physicsConfig.gravity.x * rigidBody.mass * rigidBody.gravityScale;
+						force.y -= physicsConfig.gravity.y * rigidBody.mass * rigidBody.gravityScale;
 					}
 					if (melee.active) {
 						player.facing = melee.direction;

@@ -171,7 +171,9 @@ test('diagonal strikes aim and hit above/below on both facings, lock aim, and re
 				f.step(6);
 				expect(target.enemy.components.health.current).toBe(ENEMY.health - 1);
 				expect(melee.aim).toEqual(aim);
-				// Reposition during recovery: the next swing must take a new bearing.
+				// Hold the target at its new position so its fall cannot take it out of range.
+				target.enemy.components.rigidBody.gravityScale = 0;
+				target.enemy.components.velocity.y = 0;
 				f.step(2);
 				f.world.mutateComponent(target.enemy.id, 'localTransform', function (p) { p.x = position.x + facing * 70; p.y = position.y - dy; });
 				f.attack(true); f.step(10); f.attack(false);
@@ -199,7 +201,7 @@ test('distant and disabled targets leave an airborne attack horizontal without c
 			if (scenario === 'disabled') target.hurtbox.components.combatVolume.active = false;
 			f.attack(true); f.step();
 			expect(melee.aim).toEqual({ x: 1, y: 0 });
-			expect(velocity.y).toBeCloseTo(-200 + 1400 * STEP);
+			expect(velocity.y).toBeCloseTo(-200);
 			expect(f.level.attack.components.localTransform.y).toBe(0);
 		} finally { await f.world.dispose(); }
 	}
@@ -251,5 +253,55 @@ test('nearest target wins across both sides and next swing can reverse direction
 		f.attack(true); f.step(10); f.attack(false);
 		expect(f.level.player.components.melee.strike).toBe(2);
 		expect(f.level.player.components.player.facing).toBe(1);
+	} finally { await f.world.dispose(); }
+});
+
+
+test('airborne strikes cancel gravity through the strike and a quarter-second tail, then resume falling', async () => {
+	for (const momentum of [-100, 0, 100]) {
+		const f = await fixture();
+		try {
+			for (const { enemy } of f.level.enemies) f.world.removeEntity(enemy.id);
+			const { melee, localTransform: position, velocity } = f.level.player.components;
+			position.y = 150;
+			velocity.y = momentum;
+			f.attack(true); f.step(); f.attack(false);
+			while (melee.active) {
+				expect(velocity.y).toBeCloseTo(momentum);
+				f.step();
+			}
+			const tailStartY = position.y;
+			f.step(14);
+			expect(velocity.y).toBeCloseTo(momentum);
+			expect(position.y).toBeCloseTo(tailStartY + momentum * 14 * STEP);
+			f.step();
+			expect(velocity.y).toBeCloseTo(momentum + 1400 * STEP);
+			f.step();
+			expect(velocity.y).toBeCloseTo(momentum + 2800 * STEP);
+		} finally { await f.world.dispose(); }
+	}
+});
+
+test('follow-up strikes renew gravity suppression and falling out resets it', async () => {
+	const f = await fixture();
+	try {
+		for (const { enemy } of f.level.enemies) f.world.removeEntity(enemy.id);
+		const { melee, localTransform: position, velocity } = f.level.player.components;
+		position.y = 150;
+		f.attack(true);
+		f.step(20);
+		expect(melee.strike).toBe(2);
+		expect(velocity.y).toBeCloseTo(0);
+		f.attack(false);
+		while (melee.active) f.step();
+		f.step(14);
+		expect(velocity.y).toBeCloseTo(0);
+		position.y = 600;
+		f.step();
+		expect(position.y).toBe(START.y);
+		expect(melee.gravityTail).toBe(0);
+		position.y = 150;
+		f.step();
+		expect(velocity.y).toBeCloseTo(1400 * STEP);
 	} finally { await f.world.dispose(); }
 });
