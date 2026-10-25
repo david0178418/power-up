@@ -95,6 +95,14 @@ Supported targets are active hurtbox AABBs with live owners; solids are static r
 
 `tests/beam.test.ts` covers width-sensitive hits/misses, strict ends/edges, starting overlap, diagonal/reverse/vertical geometry, invalid inputs, deterministic pass-through ordering, zero/multiple ticks, deactivation/reactivation, live geometry changes, target offsets, volume/component/owner removal, camera/off-screen independence, and the exact browser fixture. `bun run check` passes 37 tests plus typechecking and production build. Production-browser checks at 1280×1400 and 390×844 observed full coverage through the solid, live reconfiguration to a miss, camera panning, explicit removal/recreation, invalid-input deactivation, and unchanged projectile fixture contacts. Portrait is desktop browser emulation; physical device/controller acceptance remains unmeasured.
 
+## GitHub Pages
+
+[Play Power Up](https://david0178418.github.io/power-up/).
+
+`.github/workflows/pages.yml` deploys `dist/` on pushes to `master` and supports manual runs from the Actions tab on `master`. It installs Bun **1.3.14** with the frozen lockfile, runs `bun run check` (tests, typechecking, and production build), then uploads and deploys the Pages artifact. Actions are pinned to commit SHAs. Only the deployment job receives Pages/OIDC write permissions; deployments use the `github-pages` environment and do not cancel an active deployment.
+
+The repository's Pages publishing source must be **GitHub Actions** (`build_type: workflow`). The `github-pages` environment permits deployments from protected branches only. The build already emits relative asset URLs, so it works at the `/power-up/` project path without a custom domain or a separate deployment branch.
+
 ## CI and protected delivery
 
 `.github/workflows/ci.yml` runs on every pull request targeting `master` and every push to `master`, including documentation-only changes. Three independent jobs publish the exact check names `tests` (`bun test`), `typecheck` (`bun run typecheck`), and `build` (`bun run build`). Each installs Bun **1.3.14** and runs `bun install --frozen-lockfile`; actions are pinned to commit SHAs and workflow permissions are limited to `contents: read`. There are no path filters or conditional job skips.
