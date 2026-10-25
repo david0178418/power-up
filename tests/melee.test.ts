@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { createGameBuilder, spawnLevel, STEP, START, PLATFORM, ENEMY, ATTACK } from '../src/game';
+import { createGameBuilder, spawnLevel, STEP, START, PLATFORM, ENEMY, ATTACK, PLAYER } from '../src/game';
 import { inMeleeCone, MELEE } from '../src/melee';
 
 const fixture = async function (gameplay = false) {
@@ -91,7 +91,7 @@ test('magnetism assists live targets ahead or behind within range', async () => 
 			});
 			if (scenario === 'disabled') f.world.mutateComponent(target.hurtbox.id, 'combatVolume', function (v) { v.active = false; });
 			f.attack(true); f.step();
-			expect(f.level.player.components.melee.lunge).toBe(scenario === 'ahead' || scenario === 'behind' ? MELEE.magnetismSpeed : MELEE.lungeSpeed);
+			expect(f.level.player.components.melee.lunge).toBe(scenario === 'ahead' || scenario === 'behind' ? MELEE.magnetismSpeed : 0);
 			f.step(6);
 			if (scenario === 'ahead' || scenario === 'behind') expect(target.enemy.components.hitReaction.remaining).toBeGreaterThan(0);
 		} finally { await f.world.dispose(); }
@@ -201,6 +201,8 @@ test('distant and disabled targets leave an airborne attack horizontal without c
 			if (scenario === 'disabled') target.hurtbox.components.combatVolume.active = false;
 			f.attack(true); f.step();
 			expect(melee.aim).toEqual({ x: 1, y: 0 });
+			expect(position.x).toBe(START.x);
+			expect(velocity.x).toBe(0);
 			expect(velocity.y).toBeCloseTo(-200);
 			expect(f.level.attack.components.localTransform.y).toBe(0);
 		} finally { await f.world.dispose(); }
@@ -304,4 +306,31 @@ test('follow-up strikes renew gravity suppression and falling out resets it', as
 		f.step();
 		expect(velocity.y).toBeCloseTo(1400 * STEP);
 	} finally { await f.world.dispose(); }
+});
+
+
+test('untargeted combos preserve movement and stop lunging after losing a target', async () => {
+	for (const move of [-1, 0, 1]) {
+		const f = await fixture();
+		try {
+			const target = f.level.enemies[0];
+			if (!target) throw new Error('Missing target');
+			for (const { enemy } of f.level.enemies.slice(1)) f.world.removeEntity(enemy.id);
+			const { melee, localTransform: position, velocity } = f.level.player.components;
+			f.world.mutateComponent(target.enemy.id, 'localTransform', function (p) { p.x = START.x + 100; });
+			f.attack(true); f.step();
+			expect(velocity.x).toBeGreaterThan(0);
+			f.world.removeEntity(target.enemy.id);
+			while (melee.active) f.step();
+			f.world.getResource('touchInput').move = move;
+			const startX = position.x;
+			for (let i = 0; i < 40; i++) {
+				f.step();
+				expect(velocity.x).toBe(move * PLAYER.speed);
+				if (melee.active) expect(melee.lunge).toBe(0);
+			}
+			expect(melee.strike).toBe(3);
+			expect(position.x).toBeCloseTo(startX + move * PLAYER.speed * STEP * 40);
+		} finally { await f.world.dispose(); }
+	}
 });
