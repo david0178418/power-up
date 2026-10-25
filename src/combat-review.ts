@@ -1,6 +1,8 @@
 import { Graphics, type Application, type Container } from 'pixi.js';
 import type { GameWorld } from './game';
 import type { CombatContact } from './combat';
+import { ENEMY } from './game';
+import { drawHealthBar } from './health-view';
 
 export const attachCombatReview = function (
 	world: Pick<GameWorld, 'eventBus' | 'getComponent' | 'getEntity' | 'getEntitiesWithQuery'>, app: Application, root: Container, enemies: ReadonlyMap<number, Graphics>,
@@ -10,6 +12,8 @@ export const attachCombatReview = function (
 	if (!(toggle instanceof HTMLInputElement) || !status) throw new Error('Combat review controls are missing.');
 	const outlines = new Graphics();
 	root.addChild(outlines);
+	const healthBars = new Graphics();
+	root.addChild(healthBars);
 	let contacts: CombatContact[] = [];
 	const stopScan = world.eventBus.subscribe('combatScan', function () { contacts = []; });
 	const stopContact = world.eventBus.subscribe('combatContact', function (contact) { contacts.push(contact); });
@@ -21,7 +25,15 @@ export const attachCombatReview = function (
 				&& world.getEntity(contact.ownerId) && world.getEntity(contact.targetId);
 		});
 		const targets = new Set(live.map(function (contact) { return contact.targetId; }));
-		for (const [id, shape] of enemies) shape.tint = (world.getComponent(id, 'hitReaction')?.remaining ?? 0) > 0 || targets.has(id) ? 0xffe08a : 0xe76e80;
+		healthBars.clear();
+		for (const [id, shape] of enemies) {
+			if (shape.destroyed) continue;
+			shape.visible = world.getEntity(id) !== undefined;
+			shape.tint = (world.getComponent(id, 'hitReaction')?.remaining ?? 0) > 0 || targets.has(id) ? 0xffe08a : 0xe76e80;
+			const health = world.getComponent(id, 'health');
+			const position = world.getComponent(id, 'worldTransform');
+			if (shape.visible && health && position) drawHealthBar(healthBars, health, position.x, position.y - ENEMY.height / 2 - 9, ENEMY.width);
+		}
 		outlines.clear();
 		const volumes = world.getEntitiesWithQuery(['combatVolume', 'worldTransform', 'aabbCollider']);
 		const active = volumes.some(function (entity) { return entity.components.combatVolume.kind === 'attack' && entity.components.combatVolume.active; });
@@ -44,5 +56,7 @@ export const attachCombatReview = function (
 		app.ticker.remove(update);
 		outlines.removeFromParent();
 		outlines.destroy();
+		healthBars.removeFromParent();
+		healthBars.destroy();
 	};
 };
