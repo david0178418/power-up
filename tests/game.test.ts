@@ -172,15 +172,16 @@ test('touch movement and simultaneous jump/attack preserve keyboard input and ju
 		game.world.update(STEP / 2);
 		expect(position.y).toBe(START.y);
 		game.world.update(STEP / 2);
-		expect(velocity.x).toBe(PLAYER.speed / 2);
+		expect(velocity.x).toBeGreaterThan(PLAYER.speed / 2);
 		expect(velocity.y).toBeLessThan(0);
 		expect(game.attack.components.combatVolume.active).toBe(true);
 		touch.move = 0;
+		touch.attack = false;
+		game.step(8);
 		game.key('a', true);
 		game.step();
 		expect(velocity.x).toBe(-PLAYER.speed);
 		game.key('a', false);
-		touch.attack = false;
 		game.step(120);
 		expect(game.attack.components.combatVolume.active).toBe(false);
 		expect(player.grounded).toBe(true);

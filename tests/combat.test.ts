@@ -106,7 +106,7 @@ test('combat overlap does not push, stop, or change either physical body', async
 	} finally { await world.dispose(); }
 });
 
-test('fixture attack uses keyboard/gamepad, follows facing and resets without lag', async () => {
+test('melee accepts keyboard/gamepad, locks swing facing and resets without lag', async () => {
 	const input = new EventTarget();
 	let pressed = false;
 	const world = createGameBuilder({ target: input, gamepad: { poll: function () {
@@ -128,9 +128,11 @@ test('fixture attack uses keyboard/gamepad, follows facing and resets without la
 		key('keydown', 'j');
 		world.update(STEP);
 		expect(contacts).toHaveLength(1);
-		expect(level.player.components.localTransform).toMatchObject(START);
+		expect(level.player.components.localTransform.x).toBeGreaterThan(START.x);
 		key('keyup', 'j');
 		world.update(STEP);
+		expect(level.attack.components.combatVolume.active).toBe(true);
+		for (let i = 0; i < 45; i++) world.update(STEP);
 		expect(level.attack.components.combatVolume.active).toBe(false);
 		pressed = true;
 		world.update(STEP);
@@ -139,12 +141,14 @@ test('fixture attack uses keyboard/gamepad, follows facing and resets without la
 		expect(customAttack.components.localTransform).toMatchObject({ x: -90, y: 12 });
 		key('keydown', 'a');
 		world.update(STEP);
-		expect(level.attack.components.worldTransform.x).toBe(level.player.components.localTransform.x - 40);
+		expect(level.attack.components.worldTransform.x).toBe(level.player.components.localTransform.x + 40);
 		key('keyup', 'a');
 		world.mutateComponent(level.player.id, 'localTransform', function (t) { t.y = 700; });
 		world.update(STEP);
 		expect(level.player.components.localTransform).toMatchObject(START);
-		expect(level.attack.components.worldTransform.x).toBe(START.x - 40);
+		expect(level.attack.components.worldTransform.x).toBe(START.x + 40);
 		expect(level.attack.components.worldTransform.y).toBe(START.y);
+		expect(level.attack.components.combatVolume.active).toBe(false);
+		expect(level.player.components.melee.strike).toBe(0);
 	} finally { await world.dispose(); }
 });

@@ -20,11 +20,11 @@ export const attachGroundEnemyView = function (
 	const stopContact = world.eventBus.subscribe('combatContact', function (contact) { contacts.add(contact.targetId); });
 	const update = function () {
 		drawing.clear();
-		const enemies = world.getEntitiesWithQuery(['groundChaser', 'worldTransform']);
+		const enemies = world.getEntitiesWithQuery(['groundChaser', 'hitReaction', 'worldTransform']);
 		const player = world.getEntitiesWithQuery(['player', 'worldTransform'])[0];
-		for (const { id, components: { worldTransform: position } } of enemies) {
+		for (const { id, components: { worldTransform: position, hitReaction } } of enemies) {
 			drawing.rect(position.x - ENEMY.width / 2, position.y - ENEMY.height / 2, ENEMY.width, ENEMY.height)
-				.fill(contacts.has(id) ? 0xffe08a : 0xe76e80);
+				.fill(hitReaction.remaining > 0 || contacts.has(id) ? 0xffe08a : 0xe76e80);
 			const facing = player && player.components.worldTransform.x < position.x ? -1 : 1;
 			drawing.rect(position.x + facing * 6 - 2, position.y - 10, 4, 4).fill(0x101c2c);
 		}
@@ -32,7 +32,8 @@ export const attachGroundEnemyView = function (
 			if (fixtureAttack && combatVolume.active) drawing.rect(p.x - box.width / 2, p.y - box.height / 2, box.width, box.height)
 				.fill({ color: 0xffe08a, alpha: 0.25 }).stroke({ color: 0xffe08a, width: 2 });
 		}
-		status.textContent = `Ground enemies: ${enemies.length} / ${GROUND_ENEMY.limit} · one every ${GROUND_ENEMY.spawnInterval}s · chase speed ${GROUND_ENEMY.speed} (player ${PLAYER.speed})`;
+		const melee = player?.components.melee;
+		status.textContent = `Combo ${melee?.strike ?? 0}/3 · ${melee?.active ? 'strike' : (melee?.remaining ?? 0) > 0 ? 'recovering' : 'ready'} · Ground enemies: ${enemies.length} / ${GROUND_ENEMY.limit} · one every ${GROUND_ENEMY.spawnInterval}s · chase speed ${GROUND_ENEMY.speed} (player ${PLAYER.speed})`;
 	};
 	app.ticker.add(update, undefined, -100);
 	update();

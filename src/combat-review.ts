@@ -21,13 +21,13 @@ export const attachCombatReview = function (
 				&& world.getEntity(contact.ownerId) && world.getEntity(contact.targetId);
 		});
 		const targets = new Set(live.map(function (contact) { return contact.targetId; }));
-		for (const [id, shape] of enemies) shape.tint = targets.has(id) ? 0xffe08a : 0xe76e80;
+		for (const [id, shape] of enemies) shape.tint = (world.getComponent(id, 'hitReaction')?.remaining ?? 0) > 0 || targets.has(id) ? 0xffe08a : 0xe76e80;
 		outlines.clear();
 		const volumes = world.getEntitiesWithQuery(['combatVolume', 'worldTransform', 'aabbCollider']);
 		const active = volumes.some(function (entity) { return entity.components.combatVolume.kind === 'attack' && entity.components.combatVolume.active; });
 		status.textContent = live.length > 0
 			? live.map(function (contact) { return `Contact: attack ${contact.attackId} · owner ${contact.ownerId} → enemy ${contact.targetId} · hurtbox ${contact.hurtboxId}`; }).join(' | ')
-			: active ? 'Attack active · no contact' : 'Attack inactive · hold J or gamepad button 2';
+			: active ? 'Attack active · no contact' : 'Between strikes · tap or hold J / gamepad button 2';
 		if (!toggle.checked) return;
 		for (const { components: { combatVolume: volume, worldTransform: position, aabbCollider: box } } of volumes) {
 			if (!volume.active || !world.getEntity(volume.ownerId)) continue;
