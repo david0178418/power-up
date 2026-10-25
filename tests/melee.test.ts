@@ -63,32 +63,37 @@ test('a tap completes its swing and a tap during recovery buffers exactly one fo
 	} finally { await f.world.dispose(); }
 });
 
-test('cone excludes rear, steep vertical, out-of-range and coincident targets on either facing', () => {
+test('360-degree cone includes rear and vertical targets but excludes out-of-range and coincident targets', () => {
 	for (const facing of [-1, 1] as const) {
 		expect(inMeleeCone(facing * 100, 0, facing)).toBe(true);
 		expect(inMeleeCone(facing * 70, 30, facing)).toBe(true);
-		expect(inMeleeCone(facing * 30, 70, facing)).toBe(false);
-		expect(inMeleeCone(facing * -20, 0, facing)).toBe(false);
+		expect(inMeleeCone(facing * 30, 70, facing)).toBe(true);
+		expect(inMeleeCone(facing * -110, 0, facing)).toBe(true);
 		expect(inMeleeCone(facing * 111, 0, facing)).toBe(false);
+		expect(inMeleeCone(0, -110, facing)).toBe(true);
+		expect(inMeleeCone(0, 110, facing)).toBe(true);
 		expect(inMeleeCone(0, 0, facing)).toBe(false);
+		expect(inMeleeCone(NaN, 0, facing)).toBe(false);
+		expect(inMeleeCone(0, Infinity, facing)).toBe(false);
 	}
 });
 
-test('magnetism changes lunge only for a live target in the forward cone and reaches at maximum range', async () => {
+test('magnetism assists live targets ahead or behind within range', async () => {
 	for (const scenario of ['ahead', 'behind', 'above', 'far', 'disabled'] as const) {
 		const f = await fixture();
 		try {
 			const target = f.level.enemies[0];
 			if (!target) throw new Error('Missing target');
+			for (const { enemy } of f.level.enemies.slice(1)) f.world.removeEntity(enemy.id);
 			f.world.mutateComponent(target.enemy.id, 'localTransform', function (p) {
 				p.x = START.x + (scenario === 'behind' ? -100 : scenario === 'far' ? 111 : 110);
 				p.y = scenario === 'above' ? START.y - 150 : START.y;
 			});
 			if (scenario === 'disabled') f.world.mutateComponent(target.hurtbox.id, 'combatVolume', function (v) { v.active = false; });
 			f.attack(true); f.step();
-			expect(f.level.player.components.melee.lunge).toBe(scenario === 'ahead' ? MELEE.magnetismSpeed : MELEE.lungeSpeed);
+			expect(f.level.player.components.melee.lunge).toBe(scenario === 'ahead' || scenario === 'behind' ? MELEE.magnetismSpeed : MELEE.lungeSpeed);
 			f.step(6);
-			if (scenario === 'ahead') expect(target.enemy.components.hitReaction.remaining).toBeGreaterThan(0);
+			if (scenario === 'ahead' || scenario === 'behind') expect(target.enemy.components.hitReaction.remaining).toBeGreaterThan(0);
 		} finally { await f.world.dispose(); }
 	}
 });
@@ -177,8 +182,8 @@ test('diagonal strikes aim and hit above/below on both facings, lock aim, and re
 	}
 });
 
-test('rear, steep, distant and disabled targets leave an airborne attack horizontal without cancelling momentum', async () => {
-	for (const scenario of ['behind', 'steep', 'far', 'disabled'] as const) {
+test('distant and disabled targets leave an airborne attack horizontal without cancelling momentum', async () => {
+	for (const scenario of ['far', 'disabled'] as const) {
 		const f = await fixture();
 		try {
 			const target = f.level.enemies[0];
@@ -188,8 +193,8 @@ test('rear, steep, distant and disabled targets leave an airborne attack horizon
 			position.y = 200;
 			velocity.y = -200;
 			f.world.mutateComponent(target.enemy.id, 'localTransform', function (p) {
-				p.x = position.x + (scenario === 'behind' ? -50 : scenario === 'far' ? 120 : 50);
-				p.y = position.y + (scenario === 'steep' ? -100 : -25);
+				p.x = position.x + (scenario === 'far' ? 120 : 50);
+				p.y = position.y - 25;
 			});
 			if (scenario === 'disabled') target.hurtbox.components.combatVolume.active = false;
 			f.attack(true); f.step();
@@ -198,4 +203,53 @@ test('rear, steep, distant and disabled targets leave an airborne attack horizon
 			expect(f.level.attack.components.localTransform.y).toBe(0);
 		} finally { await f.world.dispose(); }
 	}
+});
+
+
+test('strikes acquire all eight directions from either facing and turn facing and pushback toward rear targets', async () => {
+	for (const facing of [-1, 1] as const) {
+		for (const [dx, dy] of [[80, 0], [60, 60], [0, 80], [-60, 60], [-80, 0], [-60, -60], [0, -80], [60, -60]] as const) {
+			const f = await fixture();
+			try {
+				const target = f.level.enemies[0];
+				if (!target) throw new Error('Missing target');
+				for (const { enemy } of f.level.enemies.slice(1)) f.world.removeEntity(enemy.id);
+				const { player, melee, localTransform: position } = f.level.player.components;
+				position.y = 200;
+				player.facing = facing;
+				f.world.mutateComponent(target.enemy.id, 'localTransform', function (p) { p.x = START.x + dx; p.y = 200 + dy; });
+				f.attack(true); f.step(); f.attack(false);
+				const direction = dx === 0 ? facing : dx < 0 ? -1 : 1;
+				expect(melee.aim.x).toBeCloseTo(dx / Math.hypot(dx, dy));
+				expect(melee.aim.y).toBeCloseTo(dy / Math.hypot(dx, dy));
+				expect(player.facing).toBe(direction);
+				f.world.getResource('touchInput').move = -direction;
+				f.step(6);
+				expect(player.facing).toBe(direction);
+				expect(target.enemy.components.health.current).toBe(ENEMY.health - 1);
+				expect(Math.sign(target.enemy.components.hitReaction.push)).toBe(direction);
+			} finally { await f.world.dispose(); }
+		}
+	}
+});
+
+test('nearest target wins across both sides and next swing can reverse direction', async () => {
+	const f = await fixture();
+	try {
+		const ahead = f.level.enemies[0];
+		const behind = f.level.enemies[1];
+		if (!ahead || !behind) throw new Error('Missing targets');
+		for (const { enemy } of f.level.enemies.slice(2)) f.world.removeEntity(enemy.id);
+		f.world.mutateComponent(ahead.enemy.id, 'localTransform', function (p) { p.x = START.x + 100; });
+		f.world.mutateComponent(behind.enemy.id, 'localTransform', function (p) { p.x = START.x - 60; });
+		f.attack(true); f.step(); f.attack(false);
+		expect(f.level.player.components.player.facing).toBe(-1);
+		f.step(8);
+		const position = f.level.player.components.localTransform;
+		f.world.mutateComponent(ahead.enemy.id, 'localTransform', function (p) { p.x = position.x + 50; });
+		f.world.mutateComponent(behind.enemy.id, 'localTransform', function (p) { p.x = position.x - 100; });
+		f.attack(true); f.step(10); f.attack(false);
+		expect(f.level.player.components.melee.strike).toBe(2);
+		expect(f.level.player.components.player.facing).toBe(1);
+	} finally { await f.world.dispose(); }
 });

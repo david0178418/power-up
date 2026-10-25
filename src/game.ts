@@ -171,7 +171,7 @@ const gameplay = definePlugin('gameplay')
 							melee.queued = false;
 							melee.direction = player.facing;
 							melee.hitTargets.clear();
-							// Assist only toward the nearest live hurtbox inside the forward cone.
+							// Assist only toward the nearest live hurtbox in any direction within range.
 							const target = queries.targets.filter(function (candidate) {
 								const p = candidate.components.localTransform;
 								return inMeleeCone(p.x - position.x, p.y - position.y, player.facing)
@@ -187,6 +187,7 @@ const gameplay = definePlugin('gameplay')
 							const dy = target ? target.components.localTransform.y - position.y : 0;
 							const distance = Math.hypot(dx, dy);
 							melee.aim = { x: dx / distance, y: dy / distance };
+							if (dx !== 0) melee.direction = dx < 0 ? -1 : 1;
 							// Stop when the two physical boxes meet along the chosen ray.
 							const clearance = Math.min(
 								(PLAYER.width + ENEMY.width) / 2 / Math.abs(melee.aim.x),
