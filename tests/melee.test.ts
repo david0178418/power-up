@@ -175,6 +175,9 @@ test('diagonal strikes aim and hit above/below on both facings, lock aim, and re
 				target.enemy.components.rigidBody.gravityScale = 0;
 				target.enemy.components.velocity.y = 0;
 				f.step(2);
+				expect(melee.active).toBe(false);
+				expect(velocity.x).toBe(0);
+				expect(velocity.y).toBe(0);
 				f.world.mutateComponent(target.enemy.id, 'localTransform', function (p) { p.x = position.x + facing * 70; p.y = position.y - dy; });
 				f.attack(true); f.step(10); f.attack(false);
 				expect(melee.strike).toBe(2);
@@ -259,7 +262,7 @@ test('nearest target wins across both sides and next swing can reverse direction
 });
 
 
-test('airborne lunges cancel gravity through the strike and a quarter-second tail, then resume falling', async () => {
+test('airborne lunges zero velocity after the burst, hover for a quarter second, then resume falling', async () => {
 	for (const momentum of [-100, 0, 100]) {
 		const f = await fixture();
 		try {
@@ -276,13 +279,17 @@ test('airborne lunges cancel gravity through the strike and a quarter-second tai
 				f.step();
 			}
 			const tailStartY = position.y;
+			const tailStartX = position.x;
+			expect(velocity.x).toBe(0);
+			expect(velocity.y).toBe(0);
 			f.step(14);
-			expect(velocity.y).toBeCloseTo(momentum);
-			expect(position.y).toBeCloseTo(tailStartY + momentum * 14 * STEP);
+			expect(velocity.y).toBeCloseTo(0);
+			expect(position.x).toBeCloseTo(tailStartX);
+			expect(position.y).toBeCloseTo(tailStartY);
 			f.step();
-			expect(velocity.y).toBeCloseTo(momentum + 1400 * STEP);
+			expect(velocity.y).toBeCloseTo(1400 * STEP);
 			f.step();
-			expect(velocity.y).toBeCloseTo(momentum + 2800 * STEP);
+			expect(velocity.y).toBeCloseTo(2800 * STEP);
 		} finally { await f.world.dispose(); }
 	}
 });
