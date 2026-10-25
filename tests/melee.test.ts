@@ -203,7 +203,7 @@ test('distant and disabled targets leave an airborne attack horizontal without c
 			expect(melee.aim).toEqual({ x: 1, y: 0 });
 			expect(position.x).toBe(START.x);
 			expect(velocity.x).toBe(0);
-			expect(velocity.y).toBeCloseTo(-200);
+			expect(velocity.y).toBeCloseTo(-200 + 1400 * STEP);
 			expect(f.level.attack.components.localTransform.y).toBe(0);
 		} finally { await f.world.dispose(); }
 	}
@@ -259,7 +259,7 @@ test('nearest target wins across both sides and next swing can reverse direction
 });
 
 
-test('airborne strikes cancel gravity through the strike and a quarter-second tail, then resume falling', async () => {
+test('airborne lunges cancel gravity through the strike and a quarter-second tail, then resume falling', async () => {
 	for (const momentum of [-100, 0, 100]) {
 		const f = await fixture();
 		try {
@@ -267,6 +267,9 @@ test('airborne strikes cancel gravity through the strike and a quarter-second ta
 			const { melee, localTransform: position, velocity } = f.level.player.components;
 			position.y = 150;
 			velocity.y = momentum;
+			// A horizontal target gives a lunge without adding vertical momentum.
+			const target = f.world.spawn({ enemy: true, localTransform: { x: position.x + 100, y: position.y, rotation: 0, scaleX: 1, scaleY: 1 } });
+			f.world.spawn({ combatVolume: { ownerId: target.id, kind: 'hurtbox', active: true } });
 			f.attack(true); f.step(); f.attack(false);
 			while (melee.active) {
 				expect(velocity.y).toBeCloseTo(momentum);
@@ -284,20 +287,29 @@ test('airborne strikes cancel gravity through the strike and a quarter-second ta
 	}
 });
 
-test('follow-up strikes renew gravity suppression and falling out resets it', async () => {
+test('untargeted follow-ups do not renew a lunge gravity tail and falling out resets it', async () => {
 	const f = await fixture();
 	try {
-		for (const { enemy } of f.level.enemies) f.world.removeEntity(enemy.id);
+		const target = f.level.enemies[0];
+		if (!target) throw new Error('Missing target');
+		for (const { enemy } of f.level.enemies.slice(1)) f.world.removeEntity(enemy.id);
 		const { melee, localTransform: position, velocity } = f.level.player.components;
 		position.y = 150;
-		f.attack(true);
-		f.step(20);
-		expect(melee.strike).toBe(2);
-		expect(velocity.y).toBeCloseTo(0);
-		f.attack(false);
+		target.enemy.components.localTransform.x = position.x + 100;
+		target.enemy.components.localTransform.y = position.y;
+		f.attack(true); f.step();
+		expect(melee.lunge).toBeGreaterThan(0);
+		f.world.removeEntity(target.enemy.id);
 		while (melee.active) f.step();
 		f.step(14);
+		expect(melee.strike).toBe(2);
+		expect(melee.lunge).toBe(0);
 		expect(velocity.y).toBeCloseTo(0);
+		f.step();
+		expect(velocity.y).toBeCloseTo(1400 * STEP);
+		while (melee.active) f.step();
+		expect(melee.gravityTail).toBe(0);
+		f.attack(false);
 		position.y = 600;
 		f.step();
 		expect(position.y).toBe(START.y);
@@ -306,6 +318,27 @@ test('follow-up strikes renew gravity suppression and falling out resets it', as
 		f.step();
 		expect(velocity.y).toBeCloseTo(1400 * STEP);
 	} finally { await f.world.dispose(); }
+});
+
+test('untargeted airborne combos follow the same gravity trajectory as no attack', async () => {
+	for (const momentum of [-100, 0, 100]) {
+		const attacking = await fixture();
+		const idle = await fixture();
+		try {
+			for (const f of [attacking, idle]) {
+				for (const { enemy } of f.level.enemies) f.world.removeEntity(enemy.id);
+				f.level.player.components.localTransform.y = 150;
+				f.level.player.components.velocity.y = momentum;
+			}
+			attacking.attack(true);
+			for (let i = 0; i < 30; i++) {
+				attacking.step(); idle.step();
+				expect(attacking.level.player.components.velocity.y).toBeCloseTo(idle.level.player.components.velocity.y);
+				expect(attacking.level.player.components.localTransform.y).toBeCloseTo(idle.level.player.components.localTransform.y);
+				expect(attacking.level.player.components.melee.gravityTail).toBe(0);
+			}
+		} finally { await attacking.world.dispose(); await idle.world.dispose(); }
+	}
 });
 
 
