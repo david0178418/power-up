@@ -35,7 +35,7 @@ test('held melee repeats three distinct strikes, recovers between hits and reset
 		expect(position.x).toBeGreaterThan(START.x);
 		const strikes = [1];
 		let recoveries = 0;
-		for (let i = 0; i < 80; i++) {
+		for (let i = 0; i < 100; i++) {
 			const active = melee.active;
 			f.step();
 			if (active && !melee.active) recoveries++;
@@ -67,6 +67,37 @@ test('a tap completes its swing and a tap during recovery buffers exactly one fo
 		expect(melee.active).toBe(false);
 		expect(melee.strike).toBe(2);
 	} finally { await f.world.dispose(); }
+});
+
+test('finisher blocks held and buffered attacks for 0.75 seconds after the swing ends', async () => {
+	for (const input of ['held', 'buffered'] as const) {
+		const f = await fixture();
+		try {
+			for (const { enemy } of f.level.enemies) f.world.removeEntity(enemy.id);
+			const melee = f.level.player.components.melee;
+			melee.strike = 2;
+			f.attack(true); f.step();
+			while (melee.active) f.step();
+			if (input === 'buffered') {
+				f.attack(false); f.step();
+				f.attack(true); f.step();
+				f.attack(false);
+			}
+			for (let tick = input === 'buffered' ? 2 : 0; tick < 44; tick++) {
+				f.step();
+				expect(melee.active).toBe(false);
+				expect(melee.strike).toBe(3);
+				expect(f.level.attack.components.combatVolume.active).toBe(false);
+			}
+			f.step(); // 45 fixed ticks = 0.75 seconds.
+			expect(Boolean(melee.active)).toBe(true);
+			expect(melee.strike).toBe(1);
+			f.attack(false);
+			f.step(60);
+			expect(melee.active).toBe(false);
+			expect(melee.strike).toBe(0);
+		} finally { await f.world.dispose(); }
+	}
 });
 
 test('360-degree cone includes rear and vertical targets but excludes out-of-range and coincident targets', () => {
