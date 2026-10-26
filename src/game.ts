@@ -6,6 +6,7 @@ import { createTransform, createTransformPlugin, transformSystems } from 'ecspre
 import { createHealth, createHealthPlugin } from 'ecspresso/plugins/combat/health';
 
 import { combat, createCombatVolume, layers } from './combat';
+import { FLYING_ENEMY, steerFlyer } from './flying-enemy';
 import { projectiles } from './projectile';
 import { beams } from './beam';
 import { hitStop, SIMULATION_GROUP } from './hit-stop';
@@ -24,6 +25,7 @@ export const GROUND_ENEMY = { speed: 90, spawnInterval: 2, limit: 8 } as const;
 export const ATTACK = { width: 56, height: 36, offset: 40 } as const;
 
 type Action = 'left' | 'right' | 'jump' | 'attack';
+const flyingSpawn = defineSystemRef('gameplay.flying-spawn');
 const groundSpawn = defineSystemRef('gameplay.ground-spawn');
 const fallReset = defineSystemRef('game.fall-reset');
 const playerControl = defineSystemRef('game.player-control');
@@ -69,8 +71,8 @@ type BaseWorld = ReturnType<ReturnType<typeof createBaseBuilder>['build']>;
 
 const gameplay = definePlugin('gameplay')
 	.requires<ConfigOf<BaseWorld>>()
-	.withComponentTypes<{ player: { grounded: boolean; facing: -1 | 1 }; platform: true; enemy: true; groundChaser: true; fixtureAttack: true; melee: MeleeState; hitReaction: HitReaction }>()
-	.withResourceTypes<{ groundSpawns: { remaining: number; spawned: number } }>()
+	.withComponentTypes<{ player: { grounded: boolean; facing: -1 | 1 }; platform: true; enemy: true; groundChaser: true; flyingChaser: { slot: number }; fixtureAttack: true; melee: MeleeState; hitReaction: HitReaction }>()
+	.withResourceTypes<{ groundSpawns: { remaining: number; spawned: number }; flyingSpawns: { remaining: number; spawned: number } }>()
 	.install(function (systems, onCleanup) {
 		let jumpHeld = false;
 		let jumpQueued = false;
@@ -86,8 +88,47 @@ const gameplay = definePlugin('gameplay')
 			const spawns = ecs.getResource('groundSpawns');
 			spawns.remaining = 0;
 			spawns.spawned = 0;
+			Object.assign(ecs.getResource('flyingSpawns'), { remaining: FLYING_ENEMY.initialDelay, spawned: 0 });
 		}));
 		systems.addResource('groundSpawns', { remaining: 0, spawned: 0 });
+		systems.addResource('flyingSpawns', { remaining: FLYING_ENEMY.initialDelay, spawned: 0 });
+		systems.addSystem('flying-spawn').inGroup(SIMULATION_GROUP).withRef(flyingSpawn)
+			.inScreens(['gameplay']).inPhase('fixedUpdate').before(physics2DSystems.integrate)
+			.withResources(['flyingSpawns'])
+			.addQuery('enemies', { with: ['flyingChaser'] }).runWhenEmpty()
+			.setProcess(function ({ ecs, dt, resources: { flyingSpawns }, queries }) {
+				flyingSpawns.remaining -= dt;
+				if (flyingSpawns.remaining > 1e-9) return;
+				flyingSpawns.remaining = FLYING_ENEMY.spawnInterval;
+				const count = Math.min(FLYING_ENEMY.waveSize, FLYING_ENEMY.limit - queries.enemies.length);
+				for (let index = 0; index < count; index++) {
+					const occupied = new Set(ecs.getEntitiesWithQuery(['flyingChaser']).map(function (enemy) { return enemy.components.flyingChaser.slot; }));
+					const slot = Array.from({ length: FLYING_ENEMY.limit }, function (_, value) { return value; }).find(function (value) { return !occupied.has(value); });
+					if (slot === undefined) break;
+					flyingSpawns.spawned++;
+					const enemy = ecs.spawn({
+						enemy: true, flyingChaser: { slot }, hitReaction: { remaining: 0, push: 0 },
+						...createHealth(ENEMY.health),
+						...createTransform(120 + (slot * 173) % 720, -ENEMY.height / 2 - index * 36),
+						...createRigidBody('dynamic', { gravityScale: 0, restitution: 0, friction: 0 }),
+						velocity: { x: 0, y: 0 },
+					});
+					ecs.spawnChild(enemy.id, createCombatVolume(enemy.id, 'hurtbox', ENEMY.width, ENEMY.height));
+				}
+			});
+		systems.addSystem('flying-chase').inGroup(SIMULATION_GROUP)
+			.inScreens(['gameplay']).inPhase('fixedUpdate').after(flyingSpawn).before(enemyReaction).before(physics2DSystems.integrate)
+			.addSingleton('target', { with: ['player', 'localTransform'] })
+			.addQuery('enemies', { with: ['flyingChaser', 'localTransform', 'velocity', 'hitReaction'], mutates: ['velocity'] })
+			.setProcess(function ({ queries, dt }) {
+				if (!queries.target) return;
+				const positions = queries.enemies.map(function (enemy) { return enemy.components.localTransform; });
+				for (const { components: { flyingChaser, localTransform, velocity, hitReaction } } of queries.enemies) {
+					if (hitReaction.remaining > 0) { velocity.y = 0; continue; }
+					Object.assign(velocity, steerFlyer(localTransform, queries.target.components.localTransform, flyingChaser.slot, positions, dt));
+				}
+			});
+
 		systems.addSystem('ground-spawn').inGroup(SIMULATION_GROUP).withRef(groundSpawn)
 			.inScreens(['gameplay']).inPhase('fixedUpdate').before(physics2DSystems.integrate)
 			.withResources(['groundSpawns'])
@@ -261,17 +302,17 @@ const gameplay = definePlugin('gameplay')
 			);
 
 		systems.addSystem('enemy-reaction').inGroup(SIMULATION_GROUP).withRef(enemyReaction)
-			.inPhase('fixedUpdate').after(groundSpawn).before(physics2DSystems.integrate)
+			.inPhase('fixedUpdate').after(groundSpawn).after(flyingSpawn).before(physics2DSystems.integrate)
 			.setProcessEach(
 				{ with: ['enemy', 'hitReaction', 'localTransform', 'velocity'], mutates: ['hitReaction', 'velocity'] },
 				function ({ entity, dt }) {
 					const { hitReaction: reaction, velocity, localTransform: position } = entity.components;
 					if (reaction.remaining <= 0) {
-						if (!entity.components.groundChaser) velocity.x = 0;
+						if (!entity.components.groundChaser && !entity.components.flyingChaser) velocity.x = 0;
 						return;
 					}
-					const left = PLATFORM.x - PLATFORM.width / 2 + ENEMY.width / 2;
-					const right = PLATFORM.x + PLATFORM.width / 2 - ENEMY.width / 2;
+					const left = entity.components.flyingChaser ? LEVEL_BOUNDS.left + ENEMY.width / 2 : PLATFORM.x - PLATFORM.width / 2 + ENEMY.width / 2;
+					const right = entity.components.flyingChaser ? LEVEL_BOUNDS.right - ENEMY.width / 2 : PLATFORM.x + PLATFORM.width / 2 - ENEMY.width / 2;
 					const travel = reaction.push * Math.min(dt, reaction.remaining);
 					velocity.x = (Math.max(left, Math.min(right, position.x + travel)) - position.x) / dt;
 					reaction.remaining = Math.max(0, reaction.remaining - dt);
