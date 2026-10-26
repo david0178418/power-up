@@ -18,10 +18,11 @@ export interface MeleeState {
 	lunge: number;
 	aim: { x: number; y: number };
 	hitTargets: Set<number>;
+	airJumpAvailable: boolean;
 }
 
 export const createMeleeState = function (): MeleeState {
-	return { strike: 0, remaining: 0, idle: 0, active: false, gravityTail: 0, queued: false, held: false, direction: 1, lunge: 0, aim: { x: 1, y: 0 }, hitTargets: new Set() };
+	return { strike: 0, remaining: 0, idle: 0, active: false, gravityTail: 0, queued: false, held: false, direction: 1, lunge: 0, aim: { x: 1, y: 0 }, hitTargets: new Set(), airJumpAvailable: false };
 };
 
 export interface HitReaction { remaining: number; push: number }
