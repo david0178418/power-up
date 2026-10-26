@@ -8,17 +8,17 @@
 	</head>
 	<body>
 		<main>
-			<header><h1>Power Up</h1><p id="screen-description">Ground enemy gameplay sandbox.</p></header>
+			<header><h1>Power Up</h1><p id="screen-description">Ground and flying enemy gameplay sandbox.</p></header>
 			<nav class="screen-controls" aria-label="Screens">
 				<button id="show-gameplay" type="button" aria-pressed="true">Gameplay</button>
 				<button id="show-test" type="button" aria-pressed="false">Test screen</button>
 			</nav>
 			<section id="gameplay-controls" aria-label="Gameplay sandbox">
-				<p id="gameplay-status" role="status">Ground enemies: 0 / 8</p>
+				<p id="gameplay-status" role="status">Ground enemies: 0 / 8 · Flying enemies: 0 / 9</p>
 				<button id="restart-gameplay" type="button">Restart sandbox</button>
 			</section>
 			<div id="play-area">
-				<div id="game" role="img" aria-label="Gameplay sandbox: cyan player on an amber platform. Rose ground enemies spawn and chase the player. Move, jump and tap or hold J for melee combos."></div>
+				<div id="game" role="img" aria-label="Gameplay sandbox: cyan player on an amber platform. Rose enemies chase along the ground; violet winged enemies swarm from the sky. Move, jump and tap or hold J for melee combos."></div>
 				<button id="toggle-fullscreen" type="button" aria-controls="play-area" aria-pressed="false" hidden>Fullscreen</button>
 				<p id="fullscreen-status" role="status"></p>
 			</div>

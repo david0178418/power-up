@@ -1,6 +1,7 @@
 import { Graphics, type Application, type Container } from 'pixi.js';
 import type { GameWorld } from './game';
-import { ENEMY, GROUND_ENEMY, PLAYER } from './game';
+import { ENEMY, GROUND_ENEMY } from './game';
+import { FLYING_ENEMY } from './flying-enemy';
 import { VIEWPORT } from './view';
 import { combatRectanglePoints } from './combat';
 import { drawHealthBar } from './health-view';
@@ -31,12 +32,22 @@ export const attachGroundEnemyView = function (
 			drawing.rect(position.x + facing * 6 - 2, position.y - 10, 4, 4).fill(0x101c2c);
 			drawHealthBar(drawing, health, position.x, position.y - ENEMY.height / 2 - 9, ENEMY.width);
 		}
+		const flyers = world.getEntitiesWithQuery(['flyingChaser', 'hitReaction', 'health', 'worldTransform']);
+		for (const { id, components: { worldTransform: p, hitReaction, health, flyingChaser } } of flyers) {
+			const flap = Math.sin(app.ticker.lastTime / 85 + flyingChaser.slot) * 10;
+			const color = hitReaction.remaining > 0 || contacts.has(id) ? 0xffe08a : 0xbba0ff;
+			drawing.poly([p.x - 10, p.y, p.x - 30, p.y - 12 + flap, p.x - 23, p.y + 10, p.x - 8, p.y + 8]).fill(color);
+			drawing.poly([p.x + 10, p.y, p.x + 30, p.y - 12 + flap, p.x + 23, p.y + 10, p.x + 8, p.y + 8]).fill(color);
+			drawing.ellipse(p.x, p.y, ENEMY.width / 2, ENEMY.height / 2).fill(color);
+			drawing.rect(p.x - 8, p.y - 5, 5, 5).rect(p.x + 3, p.y - 5, 5, 5).fill(0x101c2c);
+			drawHealthBar(drawing, health, p.x, p.y - ENEMY.height / 2 - 9, ENEMY.width);
+		}
 		for (const { components: { fixtureAttack, combatVolume, worldTransform: p, combatRectangle: rectangle } } of world.getEntitiesWithQuery(['fixtureAttack', 'combatVolume', 'worldTransform', 'combatRectangle'])) {
 			if (fixtureAttack && combatVolume.active) drawing.poly(combatRectanglePoints(p, rectangle))
 				.fill({ color: 0xffe08a, alpha: 0.25 }).stroke({ color: 0xffe08a, width: 2 });
 		}
 		const melee = player?.components.melee;
-		status.textContent = `Combo ${melee?.strike ?? 0}/3 · ${melee?.active ? 'strike' : (melee?.remaining ?? 0) > 0 ? 'recovering' : 'ready'} · Ground enemies: ${enemies.length} / ${GROUND_ENEMY.limit} · one every ${GROUND_ENEMY.spawnInterval}s · chase speed ${GROUND_ENEMY.speed} (player ${PLAYER.speed})`;
+		status.textContent = `Combo ${melee?.strike ?? 0}/3 · ${melee?.active ? 'strike' : (melee?.remaining ?? 0) > 0 ? 'recovering' : 'ready'} · Ground enemies: ${enemies.length} / ${GROUND_ENEMY.limit} · Flying enemies: ${flyers.length} / ${FLYING_ENEMY.limit}`;
 	};
 	app.ticker.add(update, undefined, -100);
 	update();
