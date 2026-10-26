@@ -69,7 +69,7 @@ test('a tap completes its swing and a tap during recovery buffers exactly one fo
 	} finally { await f.world.dispose(); }
 });
 
-test('finisher blocks held and buffered attacks for 0.75 seconds after the swing ends', async () => {
+test('finisher blocks held and buffered attacks for 0.4 seconds after the swing ends', async () => {
 	for (const input of ['held', 'buffered'] as const) {
 		const f = await fixture();
 		try {
@@ -83,13 +83,13 @@ test('finisher blocks held and buffered attacks for 0.75 seconds after the swing
 				f.attack(true); f.step();
 				f.attack(false);
 			}
-			for (let tick = input === 'buffered' ? 2 : 0; tick < 44; tick++) {
+			for (let tick = input === 'buffered' ? 2 : 0; tick < 23; tick++) {
 				f.step();
 				expect(melee.active).toBe(false);
 				expect(melee.strike).toBe(3);
 				expect(f.level.attack.components.combatVolume.active).toBe(false);
 			}
-			f.step(); // 45 fixed ticks = 0.75 seconds.
+			f.step(); // 24 fixed ticks = 0.4 seconds.
 			expect(Boolean(melee.active)).toBe(true);
 			expect(melee.strike).toBe(1);
 			f.attack(false);
