@@ -380,3 +380,72 @@ test('untargeted combos preserve movement and stop lunging after losing a target
 		} finally { await f.world.dispose(); }
 	}
 });
+
+test('only a connected finisher grants one optional air jump, which survives lunge recovery', async () => {
+	for (const scenario of ['first', 'second', 'miss', 'finisher'] as const) {
+		const f = await fixture();
+		try {
+			const target = f.level.enemies[0];
+			if (!target) throw new Error('Missing target');
+			for (const { enemy } of f.level.enemies.slice(1)) f.world.removeEntity(enemy.id);
+			const { player, melee, localTransform: position, velocity } = f.level.player.components;
+			position.y = 150;
+			player.grounded = false;
+			target.enemy.components.localTransform.x = position.x + 50;
+			target.enemy.components.localTransform.y = position.y;
+			melee.strike = scenario === 'first' ? 0 : scenario === 'second' ? 1 : 2;
+			if (scenario === 'miss') target.hurtbox.components.combatVolume.active = false;
+			f.attack(true); f.step(); f.attack(false);
+			expect(melee.airJumpAvailable).toBe(scenario === 'finisher');
+			expect(velocity.y).toBeGreaterThanOrEqual(0); // No automatic jump on contact.
+			const touch = f.world.getResource('touchInput');
+			touch.jump = true;
+			// A tap during impact freeze must survive until the next active tick.
+			f.world.update(STEP);
+			touch.jump = false;
+			f.step();
+			if (scenario !== 'finisher') {
+				expect(velocity.y).toBeGreaterThanOrEqual(0);
+				continue;
+			}
+			expect(velocity.y).toBeCloseTo(-PLAYER.jumpSpeed + 1400 * STEP);
+			expect(melee.airJumpAvailable).toBe(false);
+			expect(melee.active).toBe(false);
+			const jumpY = position.y;
+			f.step(10);
+			expect(position.y).toBeLessThan(jumpY);
+			expect(velocity.y).toBeCloseTo(-PLAYER.jumpSpeed + 1400 * STEP * 11);
+			touch.jump = true;
+			f.step();
+			expect(velocity.y).toBeCloseTo(-PLAYER.jumpSpeed + 1400 * STEP * 12);
+		} finally { await f.world.dispose(); }
+	}
+});
+
+test('a held jump needs a new press after the finisher; landing and fall reset clear the reward', async () => {
+	for (const reset of ['landing', 'fall'] as const) {
+		const f = await fixture();
+		try {
+			const target = f.level.enemies[0];
+			if (!target) throw new Error('Missing target');
+			for (const { enemy } of f.level.enemies.slice(1)) f.world.removeEntity(enemy.id);
+			const { player, melee, localTransform: position, velocity } = f.level.player.components;
+			position.y = 150;
+			player.grounded = false;
+			const touch = f.world.getResource('touchInput');
+			touch.jump = true;
+			f.step(); // Discard an airborne press before the reward exists.
+			target.enemy.components.localTransform.x = position.x + 50;
+			target.enemy.components.localTransform.y = position.y;
+			melee.strike = 2;
+			f.attack(true); f.step(); f.attack(false);
+			f.step(10);
+			expect(melee.airJumpAvailable).toBe(true);
+			expect(velocity.y).toBeGreaterThanOrEqual(0);
+			position.y = reset === 'fall' ? 600 : START.y + 1;
+			velocity.y = 0;
+			f.step(2);
+			expect(melee.airJumpAvailable).toBe(false);
+		} finally { await f.world.dispose(); }
+	}
+});

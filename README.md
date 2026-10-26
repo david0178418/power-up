@@ -9,11 +9,11 @@ bun run dev
 
 Open the URL printed by Bun (normally http://localhost:3000). Click the browser page if keyboard focus is elsewhere. For LAN access, use `bun run dev --hostname=0.0.0.0`.
 
-- Touch: start anywhere on the left half of the play area to anchor a floating joystick; drag horizontally for proportional movement. Use the right-hand **Jump** and **Attack** buttons simultaneously with movement. Release to stop; hold Attack for contact, and release/repress Jump for another grounded jump. Controls appear on touch-capable devices in both screens and fullscreen. Rotation, focus loss, cancellation, and screen changes clear held touch input.
+- Touch: start anywhere on the left half of the play area to anchor a floating joystick; drag horizontally for proportional movement. Use the right-hand **Jump** and **Attack** buttons simultaneously with movement. Release to stop; hold Attack for contact, and release/repress Jump for another grounded jump or the air jump earned by a connected third strike. Controls appear on touch-capable devices in both screens and fullscreen. Rotation, focus loss, cancellation, and screen changes clear held touch input.
 - Move: **A / D**, **Left / Right**, gamepad **left stick** or **D-pad**.
 - Attack fixture: hold **J** or gamepad **button 2** (standard left face button). Faces the last movement direction.
 - Jump: **Space** or the gamepad **primary face button** (standard button 0).
-- Jump requires ground contact and a fresh press. Airborne presses are discarded; holding jump does not repeat it.
+- Jump requires a fresh press and either ground contact or the single air jump earned when the third melee strike connects. The earned jump lasts until used, landing, or fall reset; it ends any current lunge and its gravity tail. Other airborne presses are discarded; holding jump does not repeat it.
 - Falling below the world returns the player to the middle of the platform with velocity and force reset. Held movement resumes on the next tick.
 
 Use **Fullscreen** in the top-right of the play area to expand the canvas; **Exit fullscreen** returns to the page. The button has a 44px minimum touch target and respects display safe areas. When [native fullscreen](https://developer.mozilla.org/en-US/docs/Web/API/Element/requestFullscreen) is unavailable or rejected, the play area fills the browser viewport (browser chrome may remain). Escape also closes this fallback. Both screens retain the same logical view and letterboxing as the canvas resizes, including on rotation. Touch controls stay inside the expanded play area.

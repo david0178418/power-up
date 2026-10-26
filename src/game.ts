@@ -194,9 +194,9 @@ const gameplay = definePlugin('gameplay')
 			.inPhase('fixedUpdate').after(inputSystems.update).before(physics2DSystems.integrate)
 			.withResources(['inputState', 'touchInput'])
 			.setProcessEach(
-				{ with: ['player', 'velocity'], mutates: ['player', 'velocity'] },
+				{ with: ['player', 'velocity', 'melee'], mutates: ['player', 'velocity', 'melee'] },
 				({ entity, resources: { inputState: input, touchInput } }) => {
-					const { player, velocity } = entity.components;
+					const { player, velocity, melee } = entity.components;
 					const digital = Number(input.actions.isActive('right')) - Number(input.actions.isActive('left'));
 					const stick = input.gamepads.reduce(function (strongest, pad) {
 						const x = pad.axis(0);
@@ -204,7 +204,18 @@ const gameplay = definePlugin('gameplay')
 					}, 0);
 					velocity.x = (digital || touchInput.move || stick) * PLAYER.speed;
 					if (velocity.x !== 0) player.facing = velocity.x < 0 ? -1 : 1;
-					if (player.grounded && jumpQueued) velocity.y = -PLAYER.jumpSpeed;
+					if (jumpQueued && (player.grounded || melee.airJumpAvailable)) {
+						velocity.y = -PLAYER.jumpSpeed;
+						if (melee.airJumpAvailable) {
+							// End the burst so its stop cannot erase the jump impulse.
+							if (melee.active) melee.remaining = melee.strike === 3 ? MELEE.finisherRecovery : MELEE.recovery;
+							melee.active = false;
+							melee.lunge = 0;
+							melee.gravityTail = 0;
+						}
+						melee.airJumpAvailable = false;
+					}
+					if (player.grounded) melee.airJumpAvailable = false;
 					jumpQueued = false;
 					// Physics will re-establish contact after integration and resolution.
 					player.grounded = false;
@@ -356,7 +367,10 @@ const gameplay = definePlugin('gameplay')
 				const health = ecs.getComponent(data.targetId, 'health');
 				if (!health || health.current <= 0) return;
 				if (!melee?.active || melee.hitTargets.has(data.targetId) || !ecs.getComponent(data.targetId, 'hitReaction')) return;
-				ecs.mutateComponent(data.ownerId, 'melee', function (state) { state.hitTargets.add(data.targetId); });
+				ecs.mutateComponent(data.ownerId, 'melee', function (state) {
+					if (state.strike === 3 && state.hitTargets.size === 0) state.airJumpAvailable = true;
+					state.hitTargets.add(data.targetId);
+				});
 				ecs.mutateComponent(data.targetId, 'hitReaction', function (reaction) {
 					reaction.remaining = melee.strike === 3 ? MELEE.finisherStun : MELEE.stun;
 					reaction.push = melee.direction * (melee.strike === 3 ? MELEE.finisherPushSpeed : MELEE.pushSpeed);
