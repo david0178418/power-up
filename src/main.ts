@@ -78,12 +78,12 @@ const start = async function (container: HTMLElement) {
 		testControls.hidden = screen !== 'test';
 		gameplayButton.setAttribute('aria-pressed', String(screen === 'gameplay'));
 		testButton.setAttribute('aria-pressed', String(screen === 'test'));
-		description.textContent = screen === 'gameplay' ? 'Ground enemy gameplay sandbox.' : 'Combat, projectile and beam tests.';
+		description.textContent = screen === 'gameplay' ? 'Ground and flying enemy gameplay sandbox.' : 'Combat, projectile and beam tests.';
 		hint.textContent = screen === 'gameplay'
 			? 'Tap or hold Attack for a three-hit combo. Each strike angles its lunge and hitbox toward nearby enemies in any direction, dealing one damage and stunning and pushing every enemy hit. Enemies die after three hits; bars show remaining health. Fall off to return to the platform.'
 			: 'Fall off? You’ll return to the platform.';
 		container.setAttribute('aria-label', screen === 'gameplay'
-			? 'Gameplay sandbox: cyan player on an amber platform. Rose ground enemies spawn and chase the player. Move, jump and tap or hold J for melee combos.'
+			? 'Gameplay sandbox: cyan player on an amber platform. Rose enemies chase along the ground; violet winged enemies swarm from the sky. Move, jump and tap or hold J for melee combos.'
 			: 'Platformer test screen: cyan player on an amber platform with stationary rose targets and combat review fixtures.');
 	};
 	const requestScreen = function (screen: 'test' | 'gameplay') {
