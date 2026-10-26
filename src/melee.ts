@@ -1,7 +1,7 @@
 // Timing is simulation time; a held attack repeats the three-strike chain.
 export const MELEE = {
 	hitStop: 0.05, finisherHitStop: 0.08,
-	active: 0.12, gravityTail: 0.25, recovery: 0.14, finisherRecovery: 0.75, reset: 0.45,
+	active: 0.12, gravityTail: 0.25, recovery: 0.14, finisherRecovery: 0.4, reset: 0.45,
 	magnetismSpeed: 260, magnetismRange: 110, coneHalfAngle: Math.PI,
 	stun: 0.24, finisherStun: 0.38, pushSpeed: 150, finisherPushSpeed: 230,
 } as const;
