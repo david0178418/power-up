@@ -110,7 +110,9 @@ test('no live targets produces no shot; held input repeats and screen changes cl
 		const enemy = f.world.spawn({ enemy: true, health: { current: 3, max: 3 },
 			...createTransform(10000, 100) });
 		f.world.spawnChild(enemy.id, createCombatVolume(enemy.id, 'hurtbox', 30, 40));
-		f.step(19);
+		f.step(9);
+		expect(f.world.getEntitiesWithQuery(['playerShot'])).toHaveLength(1);
+		f.step();
 		expect(f.world.getEntitiesWithQuery(['playerShot'])).toHaveLength(2);
 		await f.world.setScreen('gameplay', {});
 		expect(f.world.getEntitiesWithQuery(['playerShot'])).toHaveLength(0);
@@ -198,4 +200,108 @@ test('invalid range caps are rejected without changing lifetime-only callers', f
 		expect(function () { createProjectile(1, { x: 0, y: 0 }, { x: 700, y: 0 }, 12, 12, 2, range); }).toThrow(RangeError);
 	}
 	expect(createProjectile(1, { x: 0, y: 0 }, { x: 700, y: 0 }, 12, 12, 2).projectile.remainingRange).toBeUndefined();
+});
+
+test('firing suspends gravity for half a second after the last actual shot', async function () {
+	const f = await fixture();
+	try {
+		const { localTransform: position, velocity, ranged } = f.level.player.components;
+		position.y = 100;
+		velocity.y = 0;
+		f.key(true); f.step(); f.key(false);
+		expect(ranged.gravityTail).toBeCloseTo(0.5);
+		f.step(29);
+		expect(position.y).toBeCloseTo(100);
+		expect(velocity.y).toBeCloseTo(0);
+		f.step();
+		expect(ranged.gravityTail).toBeCloseTo(0);
+		expect(velocity.y).toBeGreaterThan(0);
+	} finally { await f.world.dispose(); }
+});
+
+test('repeated shots renew the gravity pause and empty fire attempts do not', async function () {
+	const f = await fixture();
+	try {
+		const { localTransform: position, ranged, velocity } = f.level.player.components;
+		position.y = 100;
+		velocity.y = 0;
+		for (const { enemy } of f.level.enemies) enemy.components.localTransform.x += 10000;
+		f.key(true); f.step(40);
+		expect(position.y).toBeCloseTo(100);
+		expect(ranged.gravityTail).toBeGreaterThan(0.4);
+		for (const { enemy } of f.level.enemies) f.world.removeEntity(enemy.id);
+		f.step(30);
+		expect(ranged.gravityTail).toBeCloseTo(0);
+		expect(velocity.y).toBeGreaterThan(0);
+	} finally { await f.world.dispose(); }
+});
+
+test('overlapping melee and projectile gravity pauses cancel gravity only once', async function () {
+	const f = await fixture();
+	try {
+		const { localTransform: position, velocity, melee, ranged } = f.level.player.components;
+		position.y = 100;
+		velocity.y = 0;
+		melee.gravityTail = 0.25;
+		ranged.gravityTail = 0.5;
+		f.step(10);
+		expect(position.y).toBeCloseTo(100);
+		expect(velocity.y).toBeCloseTo(0);
+	} finally { await f.world.dispose(); }
+});
+
+test('shooting gravity timers pause during hit stop and clear on fall reset and screen restart', async function () {
+	const f = await fixture();
+	try {
+		const { ranged, localTransform: position } = f.level.player.components;
+		ranged.gravityTail = 0.4;
+		f.world.getResource('hitStop').remaining = STEP * 3;
+		f.step(3);
+		expect(ranged.gravityTail).toBeCloseTo(0.4);
+		position.y = 700;
+		f.step();
+		expect(ranged.gravityTail).toBe(0);
+		ranged.gravityTail = 0.4;
+		await f.world.setScreen('test', {});
+		const restarted = spawnLevel(f.world, 'test');
+		expect(restarted.player.components.ranged.gravityTail).toBe(0);
+	} finally { await f.world.dispose(); }
+});
+
+test('a shot zeros both velocity axes for rising and falling players; movement works between shots', async function () {
+	for (const vertical of [-250, 250]) {
+		const f = await fixture();
+		try {
+			const { localTransform: position, velocity } = f.level.player.components;
+			position.y = 100;
+			velocity.y = vertical;
+			f.world.getResource('touchInput').move = 1;
+			f.key(true); f.step(); f.key(false);
+			expect(velocity.x).toBeCloseTo(0);
+			expect(velocity.y).toBeCloseTo(0);
+			expect(position.x).toBeCloseTo(480);
+			expect(position.y).toBeCloseTo(100);
+			f.step();
+			expect(velocity.x).toBeGreaterThan(0);
+			expect(position.x).toBeGreaterThan(480);
+			velocity.y = -100;
+			f.step();
+			expect(velocity.y).toBeCloseTo(-100);
+		} finally { await f.world.dispose(); }
+	}
+});
+
+test('shooting without targets neither stops momentum nor pauses gravity', async function () {
+	const f = await fixture();
+	try {
+		for (const { enemy } of f.level.enemies) f.world.removeEntity(enemy.id);
+		const { localTransform: position, velocity, ranged } = f.level.player.components;
+		position.y = 100;
+		velocity.y = 100;
+		f.world.getResource('touchInput').move = 1;
+		f.key(true); f.step();
+		expect(velocity.x).toBeGreaterThan(0);
+		expect(velocity.y).toBeGreaterThan(100);
+		expect(ranged.gravityTail).toBe(0);
+	} finally { await f.world.dispose(); }
 });

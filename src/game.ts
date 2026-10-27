@@ -22,7 +22,7 @@ export const START = { x: 480, y: PLATFORM.y - PLATFORM.height / 2 - PLAYER.heig
 
 export const ENEMY = { width: 30, height: 40, health: 3 } as const;
 export const GROUND_ENEMY = { speed: 90, spawnInterval: 2, limit: 8 } as const;
-export const RANGED = { speed: 700, cooldown: 0.3, lifetime: 2, range: 900, coneHalfAngle: Math.PI / 3, size: 12 } as const;
+export const RANGED = { speed: 700, cooldown: 0.15, gravityTail: 0.5, lifetime: 2, range: 900, coneHalfAngle: Math.PI / 3, size: 12 } as const;
 export const ATTACK = { width: 56, height: 36, offset: 40 } as const;
 
 type Action = 'left' | 'right' | 'jump' | 'attack' | 'shoot';
@@ -74,7 +74,7 @@ type BaseWorld = ReturnType<ReturnType<typeof createBaseBuilder>['build']>;
 
 const gameplay = definePlugin('gameplay')
 	.requires<ConfigOf<BaseWorld>>()
-	.withComponentTypes<{ player: { grounded: boolean; facing: -1 | 1 }; platform: true; enemy: true; groundChaser: true; flyingChaser: { slot: number }; fixtureAttack: true; playerShot: true; homingTarget: { id: number | undefined }; ranged: { remaining: number; held: boolean; queued: boolean }; melee: MeleeState; hitReaction: HitReaction }>()
+	.withComponentTypes<{ player: { grounded: boolean; facing: -1 | 1 }; platform: true; enemy: true; groundChaser: true; flyingChaser: { slot: number }; fixtureAttack: true; playerShot: true; homingTarget: { id: number | undefined }; ranged: { remaining: number; held: boolean; queued: boolean; gravityTail: number }; melee: MeleeState; hitReaction: HitReaction }>()
 	.withResourceTypes<{ groundSpawns: { remaining: number; spawned: number }; flyingSpawns: { remaining: number; spawned: number } }>()
 	.install(function (systems, onCleanup) {
 		let jumpHeld = false;
@@ -230,12 +230,11 @@ const gameplay = definePlugin('gameplay')
 
 		systems.addSystem('melee-control').inGroup(SIMULATION_GROUP).withRef(meleeControl)
 			.inPhase('fixedUpdate').after(playerControl).before(physics2DSystems.integrate)
-			.withResources(['physicsConfig'])
 			.addQuery('targets', { with: ['enemy', 'localTransform'] })
 			.addQuery('hurtboxes', { with: ['combatVolume'] })
-			.addQuery('players', { with: ['player', 'melee', 'velocity', 'localTransform', 'force', 'rigidBody'], mutates: ['player', 'melee', 'velocity', 'force'] })
-			.setProcess(function ({ queries, dt, resources: { physicsConfig } }) {
-				for (const { components: { melee, player, velocity, localTransform: position, force, rigidBody } } of queries.players) {
+			.addQuery('players', { with: ['player', 'melee', 'velocity', 'localTransform'], mutates: ['player', 'melee', 'velocity'] })
+			.setProcess(function ({ queries, dt }) {
+				for (const { components: { melee, player, velocity, localTransform: position } } of queries.players) {
 					melee.gravityTail = Math.max(0, melee.gravityTail - dt);
 					melee.remaining = Math.max(0, melee.remaining - dt);
 					if (melee.active && melee.remaining <= 1e-9) {
@@ -286,11 +285,6 @@ const gameplay = definePlugin('gameplay')
 							velocity.y += melee.aim.y * melee.lunge;
 						}
 					}
-					// Counter gravity only; preserve momentum, other forces, and collision response.
-					if ((melee.active && melee.lunge > 0) || melee.gravityTail > 1e-9) {
-						force.x -= physicsConfig.gravity.x * rigidBody.mass * rigidBody.gravityScale;
-						force.y -= physicsConfig.gravity.y * rigidBody.mass * rigidBody.gravityScale;
-					}
 					if (melee.active) {
 						player.facing = melee.direction;
 						if (melee.lunge > 0) velocity.x = melee.aim.x * melee.lunge;
@@ -299,8 +293,8 @@ const gameplay = definePlugin('gameplay')
 			});
 
 		systems.addSystem('ranged-control').inGroup(SIMULATION_GROUP).withRef(rangedControl)
-			.inScreens(['gameplay', 'test']).inPhase('fixedUpdate').before(projectileSystems.move)
-			.addQuery('players', { with: ['player', 'ranged', 'localTransform'], mutates: ['ranged'] })
+			.inScreens(['gameplay', 'test']).inPhase('fixedUpdate').after(meleeControl).before(physics2DSystems.integrate).before(projectileSystems.move)
+			.addQuery('players', { with: ['player', 'ranged', 'localTransform', 'velocity'], mutates: ['ranged', 'velocity'] })
 			.addQuery('targets', { with: ['enemy', 'health', 'localTransform'], mutates: [] })
 			.addQuery('hurtboxes', { with: ['combatVolume'], mutates: [] })
 			.addQuery('shots', { with: ['homingTarget', 'projectile', 'localTransform'], mutates: ['homingTarget', 'projectile'] })
@@ -323,7 +317,8 @@ const gameplay = definePlugin('gameplay')
 					if (alignment < Math.cos(RANGED.coneHalfAngle) - 1e-9) { homingTarget.id = undefined; continue; }
 					projectile.velocity = { x: dx / distance * speed, y: dy / distance * speed };
 				}
-				for (const { id, components: { ranged, localTransform: position } } of queries.players) {
+				for (const { id, components: { ranged, localTransform: position, velocity: playerVelocity } } of queries.players) {
+					ranged.gravityTail = Math.max(0, ranged.gravityTail - dt);
 					ranged.remaining = Math.max(0, ranged.remaining - dt);
 					if (ranged.remaining > 1e-9 || (!ranged.held && !ranged.queued)) continue;
 					ranged.queued = false;
@@ -339,8 +334,26 @@ const gameplay = definePlugin('gameplay')
 					ecs.commands.spawn({ playerShot: true, homingTarget: { id: target.id },
 						...createProjectile(id, position, velocity, RANGED.size, RANGED.size, RANGED.lifetime, RANGED.range) });
 					ranged.remaining = RANGED.cooldown;
+					ranged.gravityTail = RANGED.gravityTail;
+					playerVelocity.x = 0;
+					playerVelocity.y = 0;
 				}
 			});
+
+		// Share gravity cancellation so overlapping melee/ranged pauses never double it.
+		systems.addSystem('player-gravity-control').inGroup(SIMULATION_GROUP)
+			.inPhase('fixedUpdate').after(meleeControl, rangedControl).before(physics2DSystems.integrate)
+			.withResources(['physicsConfig'])
+			.setProcessEach(
+				{ with: ['player', 'melee', 'ranged', 'force', 'rigidBody'], mutates: ['force'] },
+				function ({ entity, resources: { physicsConfig } }) {
+					const { melee, ranged, force, rigidBody } = entity.components;
+					if (!((melee.active && melee.lunge > 0) || melee.gravityTail > 1e-9 || ranged.gravityTail > 1e-9)) return false;
+					force.x -= physicsConfig.gravity.x * rigidBody.mass * rigidBody.gravityScale;
+					force.y -= physicsConfig.gravity.y * rigidBody.mass * rigidBody.gravityScale;
+					return true;
+				},
+			);
 
 		systems.addSystem('fixture-attack').inGroup(SIMULATION_GROUP)
 			.inPhase('fixedUpdate').after(meleeControl).after(fallReset).before(transformSystems.propagate)
@@ -470,7 +483,7 @@ const gameplay = definePlugin('gameplay')
 		systems.addSystem('fall-reset').inGroup(SIMULATION_GROUP).withRef(fallReset)
 			.inPhase('fixedUpdate').after(physics2DSystems.collide)
 			.setProcessEach(
-				{ with: ['player', 'melee', 'localTransform', 'velocity', 'force'], mutates: ['player', 'melee', 'localTransform', 'velocity', 'force'] },
+				{ with: ['player', 'melee', 'ranged', 'localTransform', 'velocity', 'force'], mutates: ['player', 'melee', 'ranged', 'localTransform', 'velocity', 'force'] },
 				({ entity }) => {
 					const { player, localTransform, velocity, force } = entity.components;
 					if (localTransform.y < LEVEL_BOUNDS.bottom + PLAYER.height) return false;
@@ -482,6 +495,7 @@ const gameplay = definePlugin('gameplay')
 					force.y = 0;
 					player.grounded = true;
 					Object.assign(entity.components.melee, createMeleeState());
+					entity.components.ranged.gravityTail = 0;
 					return true;
 				},
 			);
@@ -503,7 +517,7 @@ export const spawnLevel = function (world: Pick<GameWorld, 'spawn' | 'spawnChild
 		...layers.platform(),
 	}, scope);
 	const player = world.spawn({
-		player: { grounded: true, facing: 1 }, ranged: { remaining: 0, held: false, queued: false }, melee: createMeleeState(),
+		player: { grounded: true, facing: 1 }, ranged: { remaining: 0, held: false, queued: false, gravityTail: 0 }, melee: createMeleeState(),
 		...createTransform(START.x, START.y),
 		...createRigidBody('dynamic', { restitution: 0, friction: 0 }),
 		velocity: { x: 0, y: 0 },
