@@ -430,6 +430,13 @@ const gameplay = definePlugin('gameplay')
 				const health = ecs.getComponent(data.targetId, 'health');
 				if (!health || health.current <= 0) return;
 				if (!melee?.active || melee.hitTargets.has(data.targetId) || !ecs.getComponent(data.targetId, 'hitReaction')) return;
+				if (melee.lunge === 0 && melee.hitTargets.size === 0) {
+					ecs.mutateComponent(data.ownerId, 'velocity', function (velocity) {
+						velocity.x = 0;
+						velocity.y = 0;
+					});
+					ecs.mutateComponent(data.ownerId, 'melee', function (state) { state.gravityTail = MELEE.gravityTail; });
+				}
 				ecs.mutateComponent(data.ownerId, 'melee', function (state) {
 					if (state.strike === 3 && state.hitTargets.size === 0) state.airJumpAvailable = true;
 					state.hitTargets.add(data.targetId);

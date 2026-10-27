@@ -331,6 +331,38 @@ test('airborne lunges zero velocity after the burst, hover for a quarter second,
 	}
 });
 
+test('a connected non-lunge swing stops player momentum and hovers once for a quarter second', async () => {
+	for (const momentum of [-100, 100]) {
+		const f = await fixture();
+		try {
+			const target = f.level.enemies[0];
+			if (!target) throw new Error('Missing target');
+			for (const { enemy } of f.level.enemies.slice(1)) f.world.removeEntity(enemy.id);
+			const { melee, localTransform: position, velocity } = f.level.player.components;
+			position.y = 150;
+			velocity.x = 100;
+			velocity.y = momentum;
+			// Touching physical boxes need no lunge, but the attack still connects.
+			target.enemy.components.localTransform.x = position.x + (PLAYER.width + ENEMY.width) / 2;
+			target.enemy.components.localTransform.y = position.y;
+			target.enemy.components.rigidBody.gravityScale = 0;
+			f.attack(true); f.step(); f.attack(false);
+			expect(melee.lunge).toBe(0);
+			expect(melee.hitTargets.has(target.enemy.id)).toBe(true);
+			expect(target.enemy.components.health.current).toBe(ENEMY.health - 1);
+			expect(velocity).toEqual({ x: 0, y: 0 });
+			const hoverY = position.y;
+			f.step(14);
+			expect(melee.active).toBe(false);
+			expect(target.enemy.components.health.current).toBe(ENEMY.health - 1);
+			expect(position.y).toBeCloseTo(hoverY);
+			expect(velocity.y).toBeCloseTo(0);
+			f.step();
+			expect(velocity.y).toBeCloseTo(1400 * STEP);
+		} finally { await f.world.dispose(); }
+	}
+});
+
 test('untargeted follow-ups do not renew a lunge gravity tail and falling out resets it', async () => {
 	const f = await fixture();
 	try {
