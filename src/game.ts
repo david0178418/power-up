@@ -7,7 +7,7 @@ import { createHealth, createHealthPlugin } from 'ecspresso/plugins/combat/healt
 
 import { combat, createCombatVolume, layers } from './combat';
 import { FLYING_ENEMY, steerFlyer } from './flying-enemy';
-import { projectiles } from './projectile';
+import { createProjectile, projectiles, projectileSystems } from './projectile';
 import { beams } from './beam';
 import { hitStop, SIMULATION_GROUP } from './hit-stop';
 import { createTouchInput } from './touch-input';
@@ -22,14 +22,16 @@ export const START = { x: 480, y: PLATFORM.y - PLATFORM.height / 2 - PLAYER.heig
 
 export const ENEMY = { width: 30, height: 40, health: 3 } as const;
 export const GROUND_ENEMY = { speed: 90, spawnInterval: 2, limit: 8 } as const;
+export const RANGED = { speed: 700, cooldown: 0.3, lifetime: 2, range: 900, coneHalfAngle: Math.PI / 3, size: 12 } as const;
 export const ATTACK = { width: 56, height: 36, offset: 40 } as const;
 
-type Action = 'left' | 'right' | 'jump' | 'attack';
+type Action = 'left' | 'right' | 'jump' | 'attack' | 'shoot';
 const flyingSpawn = defineSystemRef('gameplay.flying-spawn');
 const groundSpawn = defineSystemRef('gameplay.ground-spawn');
 const fallReset = defineSystemRef('game.fall-reset');
 const playerControl = defineSystemRef('game.player-control');
 const meleeControl = defineSystemRef('game.melee-control');
+const rangedControl = defineSystemRef('game.ranged-control');
 const enemyReaction = defineSystemRef('game.enemy-reaction');
 const pads = [0, 1, 2, 3];
 
@@ -62,6 +64,7 @@ const createBaseBuilder = function (input: Pick<InputPluginOptions<Action>, 'tar
 				left: { keys: ['a', 'A', 'ArrowLeft'], gamepadButtons: pads.map(pad => ({ pad, button: 14 })) },
 				right: { keys: ['d', 'D', 'ArrowRight'], gamepadButtons: pads.map(pad => ({ pad, button: 15 })) },
 				attack: { keys: ['j', 'J'], gamepadButtons: pads.map(pad => ({ pad, button: 2 })) },
+				shoot: { keys: ['k', 'K'], gamepadButtons: pads.map(pad => ({ pad, button: 1 })) },
 				jump: { keys: [' '], gamepadButtons: pads.map(pad => ({ pad, button: 0 })) },
 			},
 		}));
@@ -71,7 +74,7 @@ type BaseWorld = ReturnType<ReturnType<typeof createBaseBuilder>['build']>;
 
 const gameplay = definePlugin('gameplay')
 	.requires<ConfigOf<BaseWorld>>()
-	.withComponentTypes<{ player: { grounded: boolean; facing: -1 | 1 }; platform: true; enemy: true; groundChaser: true; flyingChaser: { slot: number }; fixtureAttack: true; melee: MeleeState; hitReaction: HitReaction }>()
+	.withComponentTypes<{ player: { grounded: boolean; facing: -1 | 1 }; platform: true; enemy: true; groundChaser: true; flyingChaser: { slot: number }; fixtureAttack: true; playerShot: true; homingTarget: { id: number | undefined }; ranged: { remaining: number; held: boolean; queued: boolean }; melee: MeleeState; hitReaction: HitReaction }>()
 	.withResourceTypes<{ groundSpawns: { remaining: number; spawned: number }; flyingSpawns: { remaining: number; spawned: number } }>()
 	.install(function (systems, onCleanup) {
 		let jumpHeld = false;
@@ -176,15 +179,18 @@ const gameplay = definePlugin('gameplay')
 
 		// Continue sampling edges during hit stop; short taps survive until simulation resumes.
 		systems.addSystem('combat-input')
-			.inPhase('fixedUpdate').after(inputSystems.update).before(playerControl).before(meleeControl)
+			.inPhase('fixedUpdate').after(inputSystems.update).before(playerControl).before(meleeControl).before(rangedControl)
 			.withResources(['inputState', 'touchInput'])
-			.addQuery('players', { with: ['melee'], mutates: ['melee'] })
+			.addQuery('players', { with: ['melee', 'ranged'], mutates: ['melee', 'ranged'] })
 			.setProcess(function ({ queries, resources: { inputState, touchInput } }) {
 				const jump = inputState.actions.isActive('jump') || touchInput.jump;
 				if (jump && !jumpHeld) jumpQueued = true;
 				jumpHeld = jump;
 				const held = inputState.actions.isActive('attack') || touchInput.attack;
-				for (const { components: { melee } } of queries.players) {
+				const shoot = inputState.actions.isActive('shoot') || touchInput.shoot;
+				for (const { components: { melee, ranged } } of queries.players) {
+					if (shoot && !ranged.held) ranged.queued = true;
+					ranged.held = shoot;
 					if (held && !melee.held) melee.queued = true;
 					melee.held = held;
 				}
@@ -292,6 +298,50 @@ const gameplay = definePlugin('gameplay')
 				}
 			});
 
+		systems.addSystem('ranged-control').inGroup(SIMULATION_GROUP).withRef(rangedControl)
+			.inScreens(['gameplay', 'test']).inPhase('fixedUpdate').before(projectileSystems.move)
+			.addQuery('players', { with: ['player', 'ranged', 'localTransform'], mutates: ['ranged'] })
+			.addQuery('targets', { with: ['enemy', 'health', 'localTransform'], mutates: [] })
+			.addQuery('hurtboxes', { with: ['combatVolume'], mutates: [] })
+			.addQuery('shots', { with: ['homingTarget', 'projectile', 'localTransform'], mutates: ['homingTarget', 'projectile'] })
+			.setProcess(function ({ queries, ecs, dt }) {
+				const targets = queries.targets.filter(function (target) {
+					return target.components.health.current > 0 && queries.hurtboxes.some(function ({ components: { combatVolume } }) {
+						return combatVolume.ownerId === target.id && combatVolume.kind === 'hurtbox' && combatVolume.active;
+					});
+				});
+				for (const { components: { homingTarget, projectile, localTransform: position } } of queries.shots) {
+					if (homingTarget.id === undefined) continue;
+					const target = targets.find(function (candidate) { return candidate.id === homingTarget.id; });
+					if (!target) { homingTarget.id = undefined; continue; }
+					const dx = target.components.localTransform.x - position.x;
+					const dy = target.components.localTransform.y - position.y;
+					const distance = Math.hypot(dx, dy);
+					const speed = Math.hypot(projectile.velocity.x, projectile.velocity.y);
+					if (distance === 0 || speed === 0) continue;
+					const alignment = (dx * projectile.velocity.x + dy * projectile.velocity.y) / (distance * speed);
+					if (alignment < Math.cos(RANGED.coneHalfAngle) - 1e-9) { homingTarget.id = undefined; continue; }
+					projectile.velocity = { x: dx / distance * speed, y: dy / distance * speed };
+				}
+				for (const { id, components: { ranged, localTransform: position } } of queries.players) {
+					ranged.remaining = Math.max(0, ranged.remaining - dt);
+					if (ranged.remaining > 1e-9 || (!ranged.held && !ranged.queued)) continue;
+					ranged.queued = false;
+					const distance = function (p: { x: number; y: number }) { return Math.hypot(p.x - position.x, p.y - position.y); };
+					const target = targets.slice().sort(function (a, b) {
+						return distance(a.components.localTransform) - distance(b.components.localTransform) || a.id - b.id;
+					})[0];
+					if (!target) continue;
+					const dx = target.components.localTransform.x - position.x;
+					const dy = target.components.localTransform.y - position.y;
+					const length = Math.hypot(dx, dy);
+					const velocity = length > 0 ? { x: dx / length * RANGED.speed, y: dy / length * RANGED.speed } : { x: RANGED.speed, y: 0 };
+					ecs.commands.spawn({ playerShot: true, homingTarget: { id: target.id },
+						...createProjectile(id, position, velocity, RANGED.size, RANGED.size, RANGED.lifetime, RANGED.range) });
+					ranged.remaining = RANGED.cooldown;
+				}
+			});
+
 		systems.addSystem('fixture-attack').inGroup(SIMULATION_GROUP)
 			.inPhase('fixedUpdate').after(meleeControl).after(fallReset).before(transformSystems.propagate)
 			.setProcessEach(
@@ -381,6 +431,20 @@ const gameplay = definePlugin('gameplay')
 			},
 		});
 
+		// Resolve the ordered sweep once; ordinary combatContact reports all swept targets.
+		systems.addSystem('player-projectile-hit').setEventHandlers({
+			projectileSweep({ data, ecs }) {
+				if (!ecs.getComponent(data.attackId, 'playerShot')) return;
+				const contact = data.contacts.find(function (candidate) {
+					return candidate.kind === 'solid' || (ecs.getComponent(candidate.targetId, 'enemy')
+						&& (ecs.getComponent(candidate.targetId, 'health')?.current ?? 0) > 0);
+				});
+				if (!contact) return;
+				if (contact.kind === 'target') ecs.eventBus.publish('damage', { entityId: contact.targetId, amount: 1, sourceId: data.ownerId });
+				ecs.commands.removeEntity(data.attackId);
+			},
+		});
+
 		systems.addSystem('enemy-death').setEventHandlers({
 			entityDied({ data, ecs }) {
 				if (!ecs.getComponent(data.entityId, 'enemy')) return;
@@ -439,7 +503,7 @@ export const spawnLevel = function (world: Pick<GameWorld, 'spawn' | 'spawnChild
 		...layers.platform(),
 	}, scope);
 	const player = world.spawn({
-		player: { grounded: true, facing: 1 }, melee: createMeleeState(),
+		player: { grounded: true, facing: 1 }, ranged: { remaining: 0, held: false, queued: false }, melee: createMeleeState(),
 		...createTransform(START.x, START.y),
 		...createRigidBody('dynamic', { restitution: 0, friction: 0 }),
 		velocity: { x: 0, y: 0 },

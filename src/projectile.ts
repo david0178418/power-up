@@ -15,6 +15,7 @@ export interface Projectile {
 	elapsedTicks: number;
 	previous: Point;
 	stepDuration: number;
+	remainingRange?: number;
 }
 
 export type ProjectileContact = (
@@ -56,17 +57,19 @@ export const sweepAABB = function (from: Point, to: Point, size: Pick<Box, 'widt
 // Spawn as a root entity. No rigidBody (no gravity/solver), and no collisionLayer
 // (swept contacts exclusively; endpoint detection must not report them again).
 export const createProjectile = function (
-	ownerId: number, position: Point, velocity: Point, width: number, height: number, lifetime: number,
+	ownerId: number, position: Point, velocity: Point, width: number, height: number, lifetime: number, range?: number,
 ) {
 	if (![velocity.x, velocity.y, lifetime].every(Number.isFinite) || lifetime <= 0) {
 		throw new RangeError('Projectiles require finite velocity and a positive finite lifetime.');
 	}
+	if (range !== undefined && (!Number.isFinite(range) || range <= 0)) throw new RangeError('Projectile range must be positive and finite.');
 	const { collisionLayer: _layer, ...volume } = createCombatVolume(ownerId, 'attack', width, height, position.x, position.y);
-	const projectile: Projectile = { velocity: { ...velocity }, remainingLifetime: lifetime, lifetime, elapsedTicks: 0, previous: { ...position }, stepDuration: 0 };
+	const projectile: Projectile = { velocity: { ...velocity }, remainingLifetime: lifetime, lifetime, elapsedTicks: 0, previous: { ...position }, stepDuration: 0, ...(range === undefined ? {} : { remainingRange: range }) };
 	return { ...volume, projectile };
 };
 
-const move = defineSystemRef('projectiles.move');
+export const projectileSystems = { move: defineSystemRef('projectiles.move') };
+const { move } = projectileSystems;
 type Layer = keyof typeof layers;
 
 export const projectiles = definePlugin('projectiles')
@@ -92,10 +95,16 @@ export const projectiles = definePlugin('projectiles')
 						projectile.remainingLifetime = 0;
 						return;
 					}
-					const travelTime = Math.min(dt, Math.max(0, projectile.remainingLifetime));
+					const speed = Math.hypot(projectile.velocity.x, projectile.velocity.y);
+					const rangeTime = projectile.remainingRange === undefined || speed === 0 ? Infinity : projectile.remainingRange / speed;
+					const travelTime = Math.min(dt, Math.max(0, projectile.remainingLifetime), rangeTime);
 					projectile.stepDuration = travelTime;
 					localTransform.x += projectile.velocity.x * travelTime;
 					localTransform.y += projectile.velocity.y * travelTime;
+					if (projectile.remainingRange !== undefined) {
+						const remaining = projectile.remainingRange - speed * travelTime;
+						projectile.remainingRange = remaining <= 1e-9 ? 0 : remaining;
+					}
 					// Derive age from integer ticks instead of accumulating subtraction error.
 					projectile.elapsedTicks += 1;
 					const age = projectile.elapsedTicks * dt;
@@ -149,7 +158,7 @@ export const projectiles = definePlugin('projectiles')
 					if (ecs.getEntity(shot.id) && ecs.getEntity(combatVolume.ownerId)) {
 						ecs.eventBus.publish('projectileSweep', { attackId: shot.id, ownerId: combatVolume.ownerId, from, to, contacts });
 					}
-					if (projectile.remainingLifetime <= 0) ecs.commands.removeEntity(shot.id);
+					if (projectile.remainingLifetime <= 0 || projectile.remainingRange === 0) ecs.commands.removeEntity(shot.id);
 				}
 			});
 	});

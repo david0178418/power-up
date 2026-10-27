@@ -8,6 +8,7 @@ import { attachCombatReview } from './combat-review';
 import { attachCameraReview } from './camera-review';
 import { attachGroundEnemyView } from './ground-enemy-view';
 import { attachFullscreen } from './fullscreen';
+import { attachPlayerProjectileView } from './player-projectile-view';
 import { attachTouchControls } from './touch-controls';
 
 const start = async function (container: HTMLElement) {
@@ -29,13 +30,14 @@ const start = async function (container: HTMLElement) {
 	let detachFullscreen: (() => void) | undefined;
 	const gameplayButton = document.getElementById('show-gameplay');
 	const testButton = document.getElementById('show-test');
+	const shootButton = document.getElementById('shoot-projectile');
 	const restartButton = document.getElementById('restart-gameplay');
 	const gameplayControls = document.getElementById('gameplay-controls');
 	const testControls = document.getElementById('test-controls');
 	const description = document.getElementById('screen-description');
 	const hint = document.getElementById('play-hint');
 	if (!(gameplayButton instanceof HTMLButtonElement) || !(testButton instanceof HTMLButtonElement)
-		|| !(restartButton instanceof HTMLButtonElement) || !gameplayControls || !testControls || !description || !hint) {
+		|| !(shootButton instanceof HTMLButtonElement) || !(restartButton instanceof HTMLButtonElement) || !gameplayControls || !testControls || !description || !hint) {
 		throw new Error('Screen controls are missing.');
 	}
 	const clearScene = function () {
@@ -73,6 +75,7 @@ const start = async function (container: HTMLElement) {
 		} else {
 			cleanups.push(attachGroundEnemyView(world, app, root));
 		}
+		cleanups.push(attachPlayerProjectileView(world, app, root));
 		world.update(0);
 		gameplayControls.hidden = screen !== 'gameplay';
 		testControls.hidden = screen !== 'test';
@@ -80,10 +83,10 @@ const start = async function (container: HTMLElement) {
 		testButton.setAttribute('aria-pressed', String(screen === 'test'));
 		description.textContent = screen === 'gameplay' ? 'Ground and flying enemy gameplay sandbox.' : 'Combat, projectile and beam tests.';
 		hint.textContent = screen === 'gameplay'
-			? 'Tap or hold Attack for a three-hit combo. Each strike angles its lunge and hitbox toward nearby enemies in any direction, dealing one damage and stunning and pushing every enemy hit. A connected third strike earns one air jump; release and press Jump to use it. Enemies die after three hits; bars show remaining health. Fall off to return to the platform.'
+			? 'Tap or hold Shoot (K) for homing projectiles aimed at the nearest enemy. Tracking ends permanently outside the 120° forward cone; shots expire after 2 seconds or 900 units. Tap or hold Attack for a three-hit combo. Each strike angles its lunge and hitbox toward nearby enemies in any direction, dealing one damage and stunning and pushing every enemy hit. A connected third strike earns one air jump; release and press Jump to use it. Enemies die after three hits; bars show remaining health. Fall off to return to the platform.'
 			: 'Fall off? You’ll return to the platform.';
 		container.setAttribute('aria-label', screen === 'gameplay'
-			? 'Gameplay sandbox: cyan player on an amber platform. Rose enemies chase along the ground; violet winged enemies swarm from the sky. Move, jump and tap or hold J for melee combos.'
+			? 'Gameplay sandbox: cyan player on an amber platform. Rose enemies chase along the ground; violet winged enemies swarm from the sky. Move, jump, tap or hold J for melee combos, and K for homing projectiles.'
 			: 'Platformer test screen: cyan player on an amber platform with stationary rose targets and combat review fixtures.');
 	};
 	const requestScreen = function (screen: 'test' | 'gameplay') {
@@ -98,12 +101,18 @@ const start = async function (container: HTMLElement) {
 			for (const button of [gameplayButton, testButton, restartButton]) button.disabled = false;
 		});
 	};
+	const shoot = function () {
+		for (const player of world.getEntitiesWithQuery(['player', 'ranged'])) {
+			world.mutateComponent(player.id, 'ranged', function (state) { state.queued = true; });
+		}
+	};
 	const showGameplay = function () { requestScreen('gameplay'); };
 	const showTest = function () { requestScreen('test'); };
 	const dispose = async function () {
 		shuttingDown = true;
 		touchControls?.dispose();
 		detachFullscreen?.();
+		shootButton.removeEventListener('click', shoot);
 		gameplayButton.removeEventListener('click', showGameplay);
 		testButton.removeEventListener('click', showTest);
 		restartButton.removeEventListener('click', showGameplay);
@@ -118,13 +127,14 @@ const start = async function (container: HTMLElement) {
 		touchControls = attachTouchControls(playArea, world.getResource('touchInput'));
 		detachFullscreen = attachFullscreen(function () { world.getResource('pixiApp').resize(); });
 		await showScreen('gameplay');
+		shootButton.addEventListener('click', shoot);
 		gameplayButton.addEventListener('click', showGameplay);
 		testButton.addEventListener('click', showTest);
 		restartButton.addEventListener('click', showGameplay);
 		// The input plugin owns listeners but does not clear held keys on blur.
 		// Release its tracked keyboard inputs when focus leaves the game.
 		const releaseKeys = function () {
-			for (const key of ['a', 'A', 'd', 'D', 'ArrowLeft', 'ArrowRight', ' ', 'j', 'J']) {
+			for (const key of ['a', 'A', 'd', 'D', 'ArrowLeft', 'ArrowRight', ' ', 'j', 'J', 'k', 'K']) {
 				window.dispatchEvent(new KeyboardEvent('keyup', { key }));
 			}
 		};
