@@ -86,6 +86,14 @@ Installed ECSpresso 0.24.1 declarations and implementation were inspected: colli
 
 `tests/projectile.test.ts` covers thin-target crossings, extent-sensitive hits and misses, starting/stationary overlap, edge entry/departure, diagonal/reverse/vertical travel, offsets, stable contact ordering, fractional-lifetime clipping, zero/multiple fixed ticks, disposal callbacks/children, identity removal/activation, camera independence, and the exact browser fixture. Existing player and melee scenarios remain in the suite.
 
+## Player beam weapon
+
+Hold **L**, standard gamepad **button 3**, or the touch **Beam** button to sustain a violet beam. Shoot remains on K / button 1 / touch Shoot. The beam follows the player's resolved position and horizontal facing, reaches 600 world units, and is 12 units wide. It fires without requiring a target and leaves movement and gravity available. It pierces enemies but stops at the first static solid; drawing and damage use the same clipped geometry.
+
+Each live enemy takes 1 damage immediately on coverage and again every 0.25 seconds while covered. Multiple hurtboxes cannot multiply damage, and releasing/repressing does not bypass the per-target interval. Damage timers pause with gameplay hit stop. Releasing the control or disconnecting the gamepad ends coverage on the next simulation tick; keyboard blur and touch cancellation release held input. Restarting/switching screens removes the previous weapon and its history. Generic beam fixtures retain their pass-through reporting contract.
+
+Defaults are in `BEAM` in `src/game.ts`; `src/player-beam-view.ts` owns the presentation and teardown. `tests/player-beam.test.ts` exercises damage cadence, piercing, solid clipping, release, input sources, Shoot coexistence, hit stop, fall reset, and screen cleanup.
+
 ## Sustained beam / area primitive
 
 `src/beam.ts` exports `createBeam(ownerId, from, to, width, active = true)` and the `beams` plugin. Spawn a beam as a **root** entity. Its `beam` component stores explicit world-space endpoints and a positive finite width; endpoints must be distinct. Geometry is a flat-ended oriented rectangle, without rounded caps. Set `combatVolume.active` to activate/deactivate and mutate `beam.from`, `beam.to`, or `beam.width` to aim, move, or resize while active. A stationary rectangle is an area attack. There is no automatic expiration: sustained coverage persists until deactivation/removal, independent of camera and viewport. Pulses, extension/retraction, damage and repeat-hit policy are deferred by owner decision.

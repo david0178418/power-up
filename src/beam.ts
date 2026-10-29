@@ -1,5 +1,5 @@
 import { SIMULATION_GROUP } from './hit-stop';
-import { definePlugin } from 'ecspresso';
+import { definePlugin, defineSystemRef } from 'ecspresso';
 import { collisionSystems, type CollisionComponentTypes } from 'ecspresso/plugins/physics/collision';
 import type { Physics2DOwnComponentTypes } from 'ecspresso/plugins/physics/physics2D';
 import type { TransformWorldConfig } from 'ecspresso/plugins/spatial/transform';
@@ -28,6 +28,8 @@ export const createBeam = function (ownerId: number, from: Point, to: Point, wid
 	return { beam, combatVolume };
 };
 
+export const beamSystems = { scan: defineSystemRef('beams.beam-scan') } as const;
+
 type Layer = keyof typeof layers;
 export const beams = definePlugin('beams')
 	.requires<TransformWorldConfig & {
@@ -37,7 +39,7 @@ export const beams = definePlugin('beams')
 	.withComponentTypes<{ beam: Beam }>()
 	.withEventTypes<{ beamScan: BeamScan }>()
 	.install(function (systems) {
-		systems.addSystem('beam-scan').inGroup(SIMULATION_GROUP).inPhase('fixedUpdate').after(collisionSystems.detect)
+		systems.addSystem('beam-scan').withRef(beamSystems.scan).inGroup(SIMULATION_GROUP).inPhase('fixedUpdate').after(collisionSystems.detect)
 			.addQuery('beams', { with: ['beam'], mutates: [] })
 			.addQuery('targets', { with: ['combatVolume', 'worldTransform', 'aabbCollider'], mutates: [] })
 			.addQuery('solids', { with: ['rigidBody', 'worldTransform', 'aabbCollider'], mutates: [] })

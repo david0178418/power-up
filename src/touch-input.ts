@@ -3,10 +3,11 @@ export interface TouchInput {
 	jump: boolean;
 	attack: boolean;
 	shoot: boolean;
+	beam: boolean;
 }
 
 export const createTouchInput = function (): TouchInput {
-	return { move: 0, jump: false, attack: false, shoot: false };
+	return { move: 0, jump: false, attack: false, shoot: false, beam: false };
 };
 
 export const JOYSTICK_RADIUS = 48;
