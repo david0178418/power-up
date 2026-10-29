@@ -11,6 +11,7 @@ export const attachTouchControls = function (area: HTMLElement, input: TouchInpu
 		<div class="touch-actions" role="group" aria-label="Touch actions">
 			<button type="button" class="touch-action" data-action="attack" aria-pressed="false">Attack</button>
 			<button type="button" class="touch-action" data-action="shoot" aria-pressed="false">Shoot</button>
+			<button type="button" class="touch-action" data-action="beam" aria-pressed="false">Beam</button>
 			<button type="button" class="touch-action" data-action="jump" aria-pressed="false">Jump</button>
 		</div>`;
 	const zone = overlay.querySelector('.touch-move');
@@ -21,10 +22,10 @@ export const attachTouchControls = function (area: HTMLElement, input: TouchInpu
 	}
 	const buttons = Array.from(overlay.querySelectorAll('button'));
 	const captures = new Map<number, HTMLElement>();
-	const actions = new Map<number, 'jump' | 'attack' | 'shoot'>();
+	const actions = new Map<number, 'jump' | 'attack' | 'shoot' | 'beam'>();
 	let joystick: { id: number; x: number; y: number } | undefined;
 	const syncActions = function () {
-		for (const action of ['jump', 'attack', 'shoot'] as const) {
+		for (const action of ['jump', 'attack', 'shoot', 'beam'] as const) {
 			input[action] = Array.from(actions.values()).includes(action);
 			buttons.find(function (button) { return button.dataset['action'] === action; })?.setAttribute('aria-pressed', String(input[action]));
 		}
@@ -48,13 +49,14 @@ export const attachTouchControls = function (area: HTMLElement, input: TouchInpu
 		input.jump = false;
 		input.attack = false;
 		input.shoot = false;
+		input.beam = false;
 	};
 	const down = function (event: PointerEvent) {
 		if (event.pointerType !== 'touch' || !(event.target instanceof Element)) return;
 		const button = event.target.closest('button');
 		const action = button?.dataset['action'];
 		let element: HTMLElement;
-		if (button && (action === 'jump' || action === 'attack' || action === 'shoot')) {
+		if (button && (action === 'jump' || action === 'attack' || action === 'shoot' || action === 'beam')) {
 			element = button;
 			actions.set(event.pointerId, action);
 			syncActions();

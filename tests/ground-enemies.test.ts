@@ -161,7 +161,8 @@ test('switching and restarting screens removes prior entities and volumes, reset
 			await world.setScreen('gameplay', {});
 			spawnLevel(world, 'gameplay');
 			expect(world.getEntitiesWithQuery(['groundChaser'])).toHaveLength(0);
-			expect(world.getEntitiesWithQuery(['combatVolume'])).toHaveLength(1);
+			expect(world.getEntitiesWithQuery(['combatVolume'])).toHaveLength(2);
+			expect(world.getEntitiesWithQuery(['playerBeam'])).toHaveLength(1);
 		}
 	} finally { await world.dispose(); }
 });

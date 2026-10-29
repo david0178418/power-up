@@ -8,7 +8,7 @@ import { createHealth, createHealthPlugin } from 'ecspresso/plugins/combat/healt
 import { combat, createCombatVolume, layers } from './combat';
 import { FLYING_ENEMY, steerFlyer } from './flying-enemy';
 import { createProjectile, projectiles, projectileSystems } from './projectile';
-import { beams } from './beam';
+import { beams, beamSystems, beamOverlap, createBeam } from './beam';
 import { hitStop, SIMULATION_GROUP } from './hit-stop';
 import { createTouchInput } from './touch-input';
 import { createMeleeState, inMeleeCone, MELEE, type MeleeState, type HitReaction } from './melee';
@@ -25,7 +25,9 @@ export const GROUND_ENEMY = { speed: 90, spawnInterval: 2, limit: 8 } as const;
 export const RANGED = { speed: 700, cooldown: 0.15, gravityTail: 0.5, lifetime: 2, range: 900, coneHalfAngle: Math.PI / 3, size: 12 } as const;
 export const ATTACK = { width: 56, height: 36, offset: 40 } as const;
 
-type Action = 'left' | 'right' | 'jump' | 'attack' | 'shoot';
+export const BEAM = { range: 600, width: 12, damageInterval: 0.25 } as const;
+
+type Action = 'left' | 'right' | 'jump' | 'attack' | 'shoot' | 'beam';
 const flyingSpawn = defineSystemRef('gameplay.flying-spawn');
 const groundSpawn = defineSystemRef('gameplay.ground-spawn');
 const fallReset = defineSystemRef('game.fall-reset');
@@ -64,6 +66,7 @@ const createBaseBuilder = function (input: Pick<InputPluginOptions<Action>, 'tar
 				left: { keys: ['a', 'A', 'ArrowLeft'], gamepadButtons: pads.map(pad => ({ pad, button: 14 })) },
 				right: { keys: ['d', 'D', 'ArrowRight'], gamepadButtons: pads.map(pad => ({ pad, button: 15 })) },
 				attack: { keys: ['j', 'J'], gamepadButtons: pads.map(pad => ({ pad, button: 2 })) },
+				beam: { keys: ['l', 'L'], gamepadButtons: pads.map(pad => ({ pad, button: 3 })) },
 				shoot: { keys: ['k', 'K'], gamepadButtons: pads.map(pad => ({ pad, button: 1 })) },
 				jump: { keys: [' '], gamepadButtons: pads.map(pad => ({ pad, button: 0 })) },
 			},
@@ -74,7 +77,7 @@ type BaseWorld = ReturnType<ReturnType<typeof createBaseBuilder>['build']>;
 
 const gameplay = definePlugin('gameplay')
 	.requires<ConfigOf<BaseWorld>>()
-	.withComponentTypes<{ player: { grounded: boolean; facing: -1 | 1 }; platform: true; enemy: true; groundChaser: true; flyingChaser: { slot: number }; fixtureAttack: true; playerShot: true; homingTarget: { id: number | undefined }; ranged: { remaining: number; held: boolean; queued: boolean; gravityTail: number }; melee: MeleeState; hitReaction: HitReaction }>()
+	.withComponentTypes<{ player: { grounded: boolean; facing: -1 | 1 }; platform: true; enemy: true; groundChaser: true; flyingChaser: { slot: number }; fixtureAttack: true; playerShot: true; playerBeam: { cooldowns: Map<number, number> }; homingTarget: { id: number | undefined }; ranged: { remaining: number; held: boolean; queued: boolean; gravityTail: number }; melee: MeleeState; hitReaction: HitReaction }>()
 	.withResourceTypes<{ groundSpawns: { remaining: number; spawned: number }; flyingSpawns: { remaining: number; spawned: number } }>()
 	.install(function (systems, onCleanup) {
 		let jumpHeld = false;
@@ -340,6 +343,49 @@ const gameplay = definePlugin('gameplay')
 				}
 			});
 
+		// Geometry follows resolved world transforms, including the fall reset.
+		systems.addSystem('player-beam-control').inGroup(SIMULATION_GROUP)
+			.inPhase('fixedUpdate').after(transformSystems.propagate).before(beamSystems.scan)
+			.withResources(['inputState', 'touchInput'])
+			.addQuery('beams', { with: ['playerBeam', 'beam', 'combatVolume'], mutates: ['playerBeam', 'beam', 'combatVolume'] })
+			.addQuery('solids', { with: ['rigidBody', 'worldTransform', 'aabbCollider'], mutates: [] })
+			.setProcess(function ({ ecs, queries, dt, resources: { inputState, touchInput } }) {
+				for (const { components: { playerBeam, beam, combatVolume } } of queries.beams) {
+					for (const [id, remaining] of playerBeam.cooldowns) {
+						if (!ecs.getEntity(id) || remaining <= dt + 1e-9) playerBeam.cooldowns.delete(id);
+						else playerBeam.cooldowns.set(id, remaining - dt);
+					}
+					const player = ecs.getComponent(combatVolume.ownerId, 'player');
+					const position = ecs.getComponent(combatVolume.ownerId, 'worldTransform');
+					combatVolume.active = false;
+					if (!player || !position || !(inputState.actions.isActive('beam') || touchInput.beam)) continue;
+					beam.from = { x: position.x, y: position.y };
+					beam.to = { x: position.x + player.facing * BEAM.range, y: position.y };
+					let fraction = 1;
+					for (const { components: { rigidBody, worldTransform: p, aabbCollider: box } } of queries.solids) {
+						if (rigidBody.type !== 'static') continue;
+						const hit = beamOverlap(beam, { ...box, x: p.x + (box.offsetX ?? 0), y: p.y + (box.offsetY ?? 0) });
+						if (hit !== undefined) fraction = Math.min(fraction, hit);
+					}
+					// An embedded muzzle has no live extent; keep valid inactive geometry.
+					if (fraction <= 0) continue;
+					beam.to = { x: beam.from.x + player.facing * BEAM.range * fraction, y: beam.from.y };
+					combatVolume.active = true;
+				}
+			});
+
+		systems.addSystem('player-beam-hit').setEventHandlers({
+			combatContact({ data, ecs }) {
+				const weapon = ecs.getComponent(data.attackId, 'playerBeam');
+				if (!weapon || weapon.cooldowns.has(data.targetId) || !ecs.getComponent(data.targetId, 'enemy')
+					|| (ecs.getComponent(data.targetId, 'health')?.current ?? 0) <= 0) return;
+				ecs.mutateComponent(data.attackId, 'playerBeam', function (state) {
+					state.cooldowns.set(data.targetId, BEAM.damageInterval);
+				});
+				ecs.eventBus.publish('damage', { entityId: data.targetId, amount: 1, sourceId: data.ownerId });
+			},
+		});
+
 		// Share gravity cancellation so overlapping melee/ranged pauses never double it.
 		systems.addSystem('player-gravity-control').inGroup(SIMULATION_GROUP)
 			.inPhase('fixedUpdate').after(meleeControl, rangedControl).before(physics2DSystems.integrate)
@@ -531,6 +577,8 @@ export const spawnLevel = function (world: Pick<GameWorld, 'spawn' | 'spawnChild
 		...createAABBCollider(PLAYER.width, PLAYER.height),
 		...layers.player(),
 	}, scope);
+	world.spawn({ playerBeam: { cooldowns: new Map<number, number>() },
+		...createBeam(player.id, START, { x: START.x + BEAM.range, y: START.y }, BEAM.width, false) }, scope);
 	const attack = world.spawnChild(player.id, { fixtureAttack: true, combatRectangle: { width: ATTACK.width, height: ATTACK.height, aim: { x: 1, y: 0 } }, ...createCombatVolume(player.id, 'attack', ATTACK.width, ATTACK.height, ATTACK.offset, 0, false) });
 	const enemies = (screen === 'gameplay' ? [] : [540, 300, 710]).map(function (x) {
 		const enemy = world.spawn({ enemy: true, hitReaction: { remaining: 0, push: 0 },

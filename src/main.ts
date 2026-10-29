@@ -9,6 +9,7 @@ import { attachCameraReview } from './camera-review';
 import { attachGroundEnemyView } from './ground-enemy-view';
 import { attachFullscreen } from './fullscreen';
 import { attachPlayerProjectileView } from './player-projectile-view';
+import { attachPlayerBeamView } from './player-beam-view';
 import { attachTouchControls } from './touch-controls';
 
 const start = async function (container: HTMLElement) {
@@ -76,6 +77,7 @@ const start = async function (container: HTMLElement) {
 			cleanups.push(attachGroundEnemyView(world, app, root));
 		}
 		cleanups.push(attachPlayerProjectileView(world, app, root));
+		cleanups.push(attachPlayerBeamView(world, app, root));
 		world.update(0);
 		gameplayControls.hidden = screen !== 'gameplay';
 		testControls.hidden = screen !== 'test';
@@ -83,10 +85,10 @@ const start = async function (container: HTMLElement) {
 		testButton.setAttribute('aria-pressed', String(screen === 'test'));
 		description.textContent = screen === 'gameplay' ? 'Ground and flying enemy gameplay sandbox.' : 'Combat, projectile and beam tests.';
 		hint.textContent = screen === 'gameplay'
-			? 'Tap or hold Shoot (K) for homing projectiles every 0.15 seconds aimed at the nearest enemy. Each shot stops your momentum; movement works between shots and gravity resumes 0.5 seconds after your last shot. Tracking ends permanently outside the 120° forward cone; shots expire after 2 seconds or 900 units. Tap or hold Attack for a three-hit combo. Each strike angles its lunge and hitbox toward nearby enemies in any direction, dealing one damage and stunning and pushing every enemy hit. A connected third strike earns one air jump; release and press Jump to use it. Enemies die after three hits; bars show remaining health. Fall off to return to the platform.'
+			? 'Hold Beam (L) to fire in your facing direction, piercing enemies and stopping at solids. Tap or hold Shoot (K) for homing projectiles every 0.15 seconds aimed at the nearest enemy. Each shot stops your momentum; movement works between shots and gravity resumes 0.5 seconds after your last shot. Tracking ends permanently outside the 120° forward cone; shots expire after 2 seconds or 900 units. Tap or hold Attack for a three-hit combo. Each strike angles its lunge and hitbox toward nearby enemies in any direction, dealing one damage and stunning and pushing every enemy hit. A connected third strike earns one air jump; release and press Jump to use it. Enemies die after three hits; bars show remaining health. Fall off to return to the platform.'
 			: 'Fall off? You’ll return to the platform.';
 		container.setAttribute('aria-label', screen === 'gameplay'
-			? 'Gameplay sandbox: cyan player on an amber platform. Rose enemies chase along the ground; violet winged enemies swarm from the sky. Move, jump, tap or hold J for melee combos, and K for homing projectiles.'
+			? 'Gameplay sandbox: cyan player on an amber platform. Rose enemies chase along the ground; violet winged enemies swarm from the sky. Move, jump, tap or hold J for melee combos, K for homing projectiles, and hold L for a beam.'
 			: 'Platformer test screen: cyan player on an amber platform with stationary rose targets and combat review fixtures.');
 	};
 	const requestScreen = function (screen: 'test' | 'gameplay') {
@@ -134,7 +136,7 @@ const start = async function (container: HTMLElement) {
 		// The input plugin owns listeners but does not clear held keys on blur.
 		// Release its tracked keyboard inputs when focus leaves the game.
 		const releaseKeys = function () {
-			for (const key of ['a', 'A', 'd', 'D', 'ArrowLeft', 'ArrowRight', ' ', 'j', 'J', 'k', 'K']) {
+			for (const key of ['a', 'A', 'd', 'D', 'ArrowLeft', 'ArrowRight', ' ', 'j', 'J', 'k', 'K', 'l', 'L']) {
 				window.dispatchEvent(new KeyboardEvent('keyup', { key }));
 			}
 		};

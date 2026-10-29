@@ -58,7 +58,7 @@ button:focus-visible { outline: 2px solid #65deeb; outline-offset: 2px; }
 .touch-move.is-active .touch-move-hint { visibility: hidden; }
 .touch-stick { position: absolute; width: 128px; height: 128px; transform: translate(-50%, -50%); border: 1px solid #a9c4d680; border-radius: 50%; background: #15283b70; pointer-events: none; }
 .touch-stick-knob { position: absolute; left: 50%; top: 50%; width: 42px; height: 42px; border: 2px solid #65deeb; border-radius: 50%; background: #65deeb60; }
-.touch-actions { position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); display: flex; gap: 12px; }
+.touch-actions { position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(2, auto); gap: 8px; }
 .touch-action { width: clamp(56px, 9vw, 72px); height: clamp(56px, 9vw, 72px); padding: 0; border-radius: 50%; border-color: #a9c4d6b0; background: #15283bbf; font-size: 13px; pointer-events: auto; touch-action: none; -webkit-touch-callout: none; }
 .touch-action[aria-pressed="true"] { background: #65deeb; color: #101c2c; border-color: #65deeb; }
 .touch-help { display: none; }
