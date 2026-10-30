@@ -183,15 +183,25 @@ const gameplay = definePlugin('gameplay')
 		// Continue sampling edges during hit stop; short taps survive until simulation resumes.
 		systems.addSystem('combat-input')
 			.inPhase('fixedUpdate').after(inputSystems.update).before(playerControl).before(meleeControl).before(rangedControl)
-			.withResources(['inputState', 'touchInput'])
+			.withResources(['inputState', 'touchInput', 'gamePause'])
 			.addQuery('players', { with: ['melee', 'ranged'], mutates: ['melee', 'ranged'] })
-			.setProcess(function ({ queries, resources: { inputState, touchInput } }) {
-				const jump = inputState.actions.isActive('jump') || touchInput.jump;
+			.setProcess(function ({ queries, resources: { inputState, touchInput, gamePause } }) {
+				// Menu presses never become buffered combat actions. Require neutral controls
+				// after resume so a held gamepad button cannot fire through the closing menu.
+				const active = (['left', 'right', 'jump', 'attack', 'shoot', 'beam'] as const).some(function (action) { return inputState.actions.isActive(action); })
+					|| touchInput.move !== 0 || touchInput.jump || touchInput.attack || touchInput.shoot || touchInput.beam
+					|| inputState.gamepads.some(function (pad) { return pad.axis(0) !== 0; });
+				if (gamePause.paused) gamePause.awaitingRelease = active;
+				else if (!active) gamePause.awaitingRelease = false;
+				const blocked = gamePause.paused || gamePause.awaitingRelease;
+				const jump = !blocked && (inputState.actions.isActive('jump') || touchInput.jump);
+				if (blocked) jumpQueued = false;
 				if (jump && !jumpHeld) jumpQueued = true;
 				jumpHeld = jump;
-				const held = inputState.actions.isActive('attack') || touchInput.attack;
-				const shoot = inputState.actions.isActive('shoot') || touchInput.shoot;
+				const held = !blocked && (inputState.actions.isActive('attack') || touchInput.attack);
+				const shoot = !blocked && (inputState.actions.isActive('shoot') || touchInput.shoot);
 				for (const { components: { melee, ranged } } of queries.players) {
+					if (blocked) { melee.queued = false; ranged.queued = false; }
 					if (shoot && !ranged.held) ranged.queued = true;
 					ranged.held = shoot;
 					if (held && !melee.held) melee.queued = true;
@@ -201,17 +211,17 @@ const gameplay = definePlugin('gameplay')
 
 		systems.addSystem('player-control').inGroup(SIMULATION_GROUP).withRef(playerControl)
 			.inPhase('fixedUpdate').after(inputSystems.update).before(physics2DSystems.integrate)
-			.withResources(['inputState', 'touchInput'])
+			.withResources(['inputState', 'touchInput', 'gamePause'])
 			.setProcessEach(
 				{ with: ['player', 'velocity', 'melee'], mutates: ['player', 'velocity', 'melee'] },
-				({ entity, resources: { inputState: input, touchInput } }) => {
+				({ entity, resources: { inputState: input, touchInput, gamePause } }) => {
 					const { player, velocity, melee } = entity.components;
 					const digital = Number(input.actions.isActive('right')) - Number(input.actions.isActive('left'));
 					const stick = input.gamepads.reduce(function (strongest, pad) {
 						const x = pad.axis(0);
 						return Math.abs(x) > Math.abs(strongest) ? x : strongest;
 					}, 0);
-					velocity.x = (digital || touchInput.move || stick) * PLAYER.speed;
+					velocity.x = gamePause.paused || gamePause.awaitingRelease ? 0 : (digital || touchInput.move || stick) * PLAYER.speed;
 					if (velocity.x !== 0) player.facing = velocity.x < 0 ? -1 : 1;
 					if (jumpQueued && (player.grounded || melee.airJumpAvailable)) {
 						velocity.y = -PLAYER.jumpSpeed;
@@ -346,10 +356,10 @@ const gameplay = definePlugin('gameplay')
 		// Geometry follows resolved world transforms, including the fall reset.
 		systems.addSystem('player-beam-control').inGroup(SIMULATION_GROUP)
 			.inPhase('fixedUpdate').after(transformSystems.propagate).before(beamSystems.scan)
-			.withResources(['inputState', 'touchInput'])
+			.withResources(['inputState', 'touchInput', 'gamePause'])
 			.addQuery('beams', { with: ['playerBeam', 'beam', 'combatVolume'], mutates: ['playerBeam', 'beam', 'combatVolume'] })
 			.addQuery('solids', { with: ['rigidBody', 'worldTransform', 'aabbCollider'], mutates: [] })
-			.setProcess(function ({ ecs, queries, dt, resources: { inputState, touchInput } }) {
+			.setProcess(function ({ ecs, queries, dt, resources: { inputState, touchInput, gamePause } }) {
 				for (const { components: { playerBeam, beam, combatVolume } } of queries.beams) {
 					for (const [id, remaining] of playerBeam.cooldowns) {
 						if (!ecs.getEntity(id) || remaining <= dt + 1e-9) playerBeam.cooldowns.delete(id);
@@ -358,7 +368,7 @@ const gameplay = definePlugin('gameplay')
 					const player = ecs.getComponent(combatVolume.ownerId, 'player');
 					const position = ecs.getComponent(combatVolume.ownerId, 'worldTransform');
 					combatVolume.active = false;
-					if (!player || !position || !(inputState.actions.isActive('beam') || touchInput.beam)) continue;
+					if (!player || !position || gamePause.paused || gamePause.awaitingRelease || !(inputState.actions.isActive('beam') || touchInput.beam)) continue;
 					beam.from = { x: position.x, y: position.y };
 					beam.to = { x: position.x + player.facing * BEAM.range, y: position.y };
 					let fraction = 1;

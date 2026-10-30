@@ -6,14 +6,19 @@ export const SIMULATION_GROUP = 'game-simulation';
 // Consume paused ticks instead of accumulating a catch-up burst. The impact tick
 // completes normally so damage, death and transforms are visible during the hold.
 export const hitStop = definePlugin('hit-stop')
-	.withResourceTypes<{ hitStop: { remaining: number } }>()
+	.withResourceTypes<{ hitStop: { remaining: number }; gamePause: { paused: boolean; awaitingRelease: boolean } }>()
 	.install(function (systems) {
 		systems.addResource('hitStop', { remaining: 0 });
+		systems.addResource('gamePause', { paused: false, awaitingRelease: false });
 		systems.addSystem('hit-stop-clock')
 			.inPhase('fixedUpdate').before(inputSystems.update)
 			.setPriority(Number.MAX_SAFE_INTEGER)
-			.withResources(['hitStop'])
-			.setProcess(function ({ ecs, dt, resources: { hitStop } }) {
+			.withResources(['hitStop', 'gamePause'])
+			.setProcess(function ({ ecs, dt, resources: { hitStop, gamePause } }) {
+				if (gamePause.paused) {
+					ecs.disableSystemGroup(SIMULATION_GROUP);
+					return;
+				}
 				if (hitStop.remaining > 1e-9) {
 					ecs.disableSystemGroup(SIMULATION_GROUP);
 					hitStop.remaining = Math.max(0, hitStop.remaining - dt);

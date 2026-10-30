@@ -3,31 +3,33 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="theme-color" content="#0a121e" />
 		<title>Power Up</title>
 		<link rel="stylesheet" href="./src/style.css" />
 	</head>
 	<body>
 		<main>
-			<header><h1>Power Up</h1><p id="screen-description">Ground and flying enemy gameplay sandbox.</p></header>
-			<nav class="screen-controls" aria-label="Screens">
-				<button id="show-gameplay" type="button" aria-pressed="true">Gameplay</button>
-				<button id="show-test" type="button" aria-pressed="false">Test screen</button>
-			</nav>
-			<section id="gameplay-controls" aria-label="Gameplay sandbox">
-				<p id="gameplay-status" role="status">Ground enemies: 0 / 8 · Flying enemies: 0 / 9</p>
-				<button id="shoot-projectile" type="button">Shoot (K)</button>
-				<button id="restart-gameplay" type="button">Restart sandbox</button>
-			</section>
-			<div id="play-area">
-				<div id="game" role="img" aria-label="Gameplay sandbox: cyan player on an amber platform. Rose enemies chase along the ground; violet winged enemies swarm from the sky. Move, jump and tap or hold J for melee combos."></div>
-				<button id="toggle-fullscreen" type="button" aria-controls="play-area" aria-pressed="false" hidden>Fullscreen</button>
-				<p id="fullscreen-status" role="status"></p>
-			</div>
-			<footer>
-				<p><strong>Move</strong> A / D or ← / → <span>·</span> <strong>Jump</strong> Space <span>·</span> <strong>Attack</strong> Tap / hold J <span>·</span> <strong>Shoot</strong> Tap / hold K <span>·</span> <strong>Beam</strong> Hold L</p>
-				<p>Gamepad: left stick or D-pad <span>·</span> primary face button to jump <span>·</span> button 2 to attack <span>·</span> button 1 to shoot <span>·</span> hold button 3 for beam</p>
-				<p class="touch-help">Touch: drag on the left to move · Jump, Attack, Shoot and Beam on the right</p>
-				<p id="play-hint" class="hint">Tap or hold Attack for a three-hit combo. Each strike lunges toward nearby enemies ahead, dealing one damage and stunning and pushing every enemy hit. Enemies die after three hits; bars show remaining health. Fall off to return to the platform.</p>
+			<section id="play-area" aria-label="Power Up sandbox">
+				<header class="game-toolbar">
+					<div class="identity"><span class="brand-mark" aria-hidden="true"></span><h1>POWER UP</h1><p id="screen-description">Sandbox</p></div>
+					<div class="toolbar-actions">
+						<button id="open-controls" type="button" aria-haspopup="dialog" aria-controls="game-menu">Controls</button>
+						<button id="toggle-fullscreen" type="button" aria-controls="play-area" aria-pressed="false" hidden>Expand</button>
+						<button id="open-menu" class="icon-button" type="button" aria-label="Open menu" aria-haspopup="dialog" aria-controls="game-menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14" /></svg></button>
+					</div>
+				</header>
+				<div id="arena">
+					<div id="game" tabindex="-1" role="img" aria-label="Gameplay sandbox: cyan player on an amber platform with rose ground enemies and violet flying enemies."></div>
+					<div id="combat-hud" class="combat-hud" hidden aria-label="Combo progress">
+						<div class="combo-heading"><span>COMBO</span><strong id="combo-value">0 / 3</strong></div>
+						<div class="combo-segments" aria-hidden="true"><i></i><i></i><i></i></div>
+						<p>Connect hit 3 to earn an air jump</p>
+					</div>
+					<div id="air-jump-hint" class="air-jump-hint" role="status" hidden><span class="air-jump-icon" aria-hidden="true">↑</span><div><strong>AIR JUMP READY</strong><p id="air-jump-binding">Release Jump, then press Space again</p></div></div>
+					<p id="first-play-hint" class="first-play-hint" hidden>Hold J to chain a three-hit combo</p>
+					<p id="fullscreen-status" role="status"></p>
+				</div>
+				<footer class="input-rail"><div id="input-legend" aria-label="Active controls"></div><span id="input-device">KEYBOARD</span><span class="menu-shortcut"><kbd>Esc</kbd> Menu</span></footer>
 				<div id="test-controls" hidden>
 					<section id="combat-review" aria-label="Combat overlap fixture">
 						<label><input id="combat-outlines" type="checkbox" checked /> Show combat outlines</label>
@@ -75,8 +77,21 @@
 						<p id="coordinate-status">Point at the canvas to inspect world coordinates.</p>
 					</section>
 				</div>
-			</footer>
-			<p id="error" role="alert" hidden></p>
+				<dialog id="game-menu" aria-labelledby="menu-title">
+					<div class="pause-caption" aria-hidden="true"><span>POWER UP / SANDBOX</span><p>Paused.</p><small>Pick up where you left off.</small></div>
+					<div class="menu-panel">
+						<div class="menu-heading"><h2 id="menu-title">Controls &amp; tips</h2><button id="close-menu" class="icon-button" type="button" aria-label="Close menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div>
+						<div class="menu-actions"><button id="resume-game" class="primary" type="button" autofocus>Resume</button><button id="restart-gameplay" type="button">Restart sandbox</button></div>
+						<div class="input-tabs" role="group" aria-label="Control instructions"><button type="button" data-input="keyboard" aria-pressed="true">Keyboard</button><button type="button" data-input="gamepad" aria-pressed="false">Gamepad</button><button type="button" data-input="touch" aria-pressed="false">Touch</button></div>
+						<dl id="control-instructions"></dl>
+						<aside class="mechanic-tip"><strong>Make the third hit count.</strong><p>Connect the third melee strike to earn one air jump. Release Jump, then press again while airborne.</p></aside>
+						<details class="mechanics-details"><summary>More combat tips</summary><p>Hold Shoot for homing projectiles aimed at the nearest enemy. Each shot stops your momentum and briefly suspends falling. Hold Beam to fire in your facing direction, piercing enemies until it reaches a solid.</p><p>Enemies take three hits to defeat. Falling off returns you to the platform.</p></details>
+						<details class="developer-tools"><summary>Developer tools</summary><p id="gameplay-status">Ground enemies: 0 / 8 · Flying enemies: 0 / 9</p><nav class="screen-controls" aria-label="Screens"><button id="show-gameplay" type="button" aria-pressed="true">Gameplay</button><button id="show-test" type="button" aria-pressed="false">Test screen</button></nav></details>
+						<p class="menu-help">Escape or gamepad Menu to resume</p>
+					</div>
+				</dialog>
+				<p id="error" role="alert" hidden></p>
+			</section>
 		</main>
 		<script type="module" src="./src/main.ts"></script>
 	</body>
