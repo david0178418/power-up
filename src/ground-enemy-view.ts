@@ -8,7 +8,7 @@ import { drawHealthBar } from './health-view';
 
 // Presentation follows live ECS entities; no second spawn timer or movement loop.
 export const attachGroundEnemyView = function (
-	world: Pick<GameWorld, 'getEntitiesWithQuery' | 'eventBus'>, app: Application, root: Container,
+	world: Pick<GameWorld, 'getEntitiesWithQuery' | 'getResource' | 'eventBus'>, app: Application, root: Container,
 ) {
 	const status = document.getElementById('gameplay-status');
 	if (!status || !root.parent) throw new Error('Gameplay view setup is missing.');
@@ -19,9 +19,12 @@ export const attachGroundEnemyView = function (
 	const drawing = new Graphics();
 	root.addChild(drawing);
 	const contacts = new Set<number>();
+	const pause = world.getResource('gamePause');
+	let animationTime = 0;
 	const stopScan = world.eventBus.subscribe('combatScan', function () { contacts.clear(); });
 	const stopContact = world.eventBus.subscribe('combatContact', function (contact) { contacts.add(contact.targetId); });
 	const update = function () {
+		if (!pause.paused) animationTime += app.ticker.deltaMS;
 		drawing.clear();
 		const enemies = world.getEntitiesWithQuery(['groundChaser', 'hitReaction', 'health', 'worldTransform']);
 		const player = world.getEntitiesWithQuery(['player', 'worldTransform'])[0];
@@ -34,7 +37,7 @@ export const attachGroundEnemyView = function (
 		}
 		const flyers = world.getEntitiesWithQuery(['flyingChaser', 'hitReaction', 'health', 'worldTransform']);
 		for (const { id, components: { worldTransform: p, hitReaction, health, flyingChaser } } of flyers) {
-			const flap = Math.sin(app.ticker.lastTime / 85 + flyingChaser.slot) * 10;
+			const flap = Math.sin(animationTime / 85 + flyingChaser.slot) * 10;
 			const color = hitReaction.remaining > 0 || contacts.has(id) ? 0xffe08a : 0xbba0ff;
 			drawing.poly([p.x - 10, p.y, p.x - 30, p.y - 12 + flap, p.x - 23, p.y + 10, p.x - 8, p.y + 8]).fill(color);
 			drawing.poly([p.x + 10, p.y, p.x + 30, p.y - 12 + flap, p.x + 23, p.y + 10, p.x + 8, p.y + 8]).fill(color);

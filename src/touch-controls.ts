@@ -9,10 +9,10 @@ export const attachTouchControls = function (area: HTMLElement, input: TouchInpu
 			<div class="touch-stick" hidden><div class="touch-stick-knob"></div></div>
 		</div>
 		<div class="touch-actions" role="group" aria-label="Touch actions">
-			<button type="button" class="touch-action" data-action="attack" aria-pressed="false">Attack</button>
-			<button type="button" class="touch-action" data-action="shoot" aria-pressed="false">Shoot</button>
-			<button type="button" class="touch-action" data-action="beam" aria-pressed="false">Beam</button>
-			<button type="button" class="touch-action" data-action="jump" aria-pressed="false">Jump</button>
+			<button type="button" class="touch-action" data-action="attack" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 19 7-7m-2-3 8-6 3 3-7 8m-5-5 6 6M3 21l3-3" /></svg>Attack</button>
+			<button type="button" class="touch-action" data-action="shoot" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h14m-5-5 5 5-5 5M6 8H3m3 8H3" /></svg>Shoot</button>
+			<button type="button" class="touch-action" data-action="beam" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>Beam</button>
+			<button type="button" class="touch-action" data-action="jump" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>Jump</button>
 		</div>`;
 	const zone = overlay.querySelector('.touch-move');
 	const stick = overlay.querySelector('.touch-stick');

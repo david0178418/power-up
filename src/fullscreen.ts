@@ -15,7 +15,7 @@ export const attachFullscreen = function (resize: () => void) {
 		.map(function (element) { return { element, inert: element.inert }; });
 	const sync = function () {
 		const active = expanded || document.fullscreenElement === area;
-		button.textContent = active ? 'Exit fullscreen' : 'Fullscreen';
+		button.textContent = active ? 'Exit fullscreen' : 'Expand';
 		button.setAttribute('aria-pressed', String(active));
 	};
 	const setExpanded = function (active: boolean) {
@@ -53,7 +53,7 @@ export const attachFullscreen = function (resize: () => void) {
 		}
 	};
 	const onEscape = function (event: KeyboardEvent) {
-		if (event.key === 'Escape' && expanded) {
+		if (event.key === 'Escape' && expanded && !event.defaultPrevented) {
 			setExpanded(false);
 			button.focus({ preventScroll: true });
 		}
